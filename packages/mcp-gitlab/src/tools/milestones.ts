@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
 import type { GitLabMilestone } from "../types.js";
 
-const groupIdSchema = z.string().describe("ID ou chemin du groupe GitLab");
+const groupIdSchema = z.string().describe("ID ou chemin URL du groupe GitLab (ex: '42' ou 'wanadev/kp1'). Si vous n'avez que le nom, appelez d'abord list_groups pour trouver le chemin exact.");
 
 function formatMilestone(m: GitLabMilestone): string {
   const due = m.due_date ? ` — Echeance: ${m.due_date}` : "";

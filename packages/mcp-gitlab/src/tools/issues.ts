@@ -48,7 +48,7 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
     description:
       "Lister les issues d'un groupe GitLab. Filtrer par etat, recherche, labels, milestone ou assignee.",
     inputSchema: {
-      group_id: z.string().describe("ID ou chemin du groupe GitLab"),
+      group_id: z.string().describe("ID ou chemin URL du groupe GitLab (ex: '42' ou 'wanadev/kp1'). Si vous n'avez que le nom, appelez d'abord list_groups pour trouver le chemin exact."),
       state: z.enum(["opened", "closed", "all"]).optional().describe("Filtrer par etat"),
       search: z.string().optional().describe("Recherche textuelle"),
       labels: z.string().optional().describe("Labels (separes par virgule)"),

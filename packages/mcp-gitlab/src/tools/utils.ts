@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
 import type { GitLabProject, GitLabMember, GitLabUser, GitLabGroup } from "../types.js";
 
-const groupIdSchema = z.string().describe("ID ou chemin du groupe GitLab");
+const groupIdSchema = z.string().describe("ID ou chemin URL du groupe GitLab (ex: '42' ou 'wanadev/kp1'). Si vous n'avez que le nom, appelez d'abord list_groups pour trouver le chemin exact.");
 
 function formatProject(p: GitLabProject): string {
   const archived = p.archived ? " [ARCHIVE]" : "";
@@ -53,7 +53,7 @@ function formatGroups(groups: GitLabGroup[]): string {
 export function registerUtilTools(server: McpServer, client: GitLabClient): void {
   server.registerTool("list_groups", {
     description:
-      "Lister les groupes GitLab accessibles. Utiliser ce tool pour decouvrir les group_id a passer aux autres tools.",
+      "Lister les groupes GitLab accessibles. IMPORTANT : appelez ce tool en premier quand l'utilisateur mentionne un groupe par son nom, pour obtenir le group_id (ID ou full_path) a passer aux autres tools.",
     inputSchema: {
       search: z.string().optional().describe("Recherche textuelle dans le nom du groupe"),
       top_level_only: z.boolean().optional().describe("Ne retourner que les groupes de premier niveau"),
