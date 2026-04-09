@@ -3,13 +3,13 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
 import type { GitLabIssue } from "../types.js";
 
-const dryRunSchema = z.boolean().default(true).describe("Mode simulation (defaut: true). A true, retourne un resume de l'action sans l'executer. Passer a false uniquement apres confirmation de l'utilisateur.");
+const dryRunSchema = z.boolean().default(true).describe("Dry run mode (default: true). When true, returns a preview of the action without executing it. Set to false only after user confirmation.");
 
 function dryRunResponse(action: string, details: Record<string, unknown>): { content: { type: "text"; text: string }[] } {
   const lines = Object.entries(details)
     .filter(([, v]) => v !== undefined)
     .map(([k, v]) => `  - **${k}:** ${Array.isArray(v) ? v.join(", ") : v}`);
-  const text = `**[DRY RUN] ${action}**\n\n${lines.join("\n")}\n\n> Appelez a nouveau avec \`dry_run: false\` pour executer cette action.`;
+  const text = `**[DRY RUN] ${action}**\n\n${lines.join("\n")}\n\n> Please confirm to execute this action.`;
   return { content: [{ type: "text" as const, text }] };
 }
 

@@ -4,13 +4,13 @@ import type { GitLabClient } from "../client.js";
 import type { GitLabMilestone } from "../types.js";
 
 const groupIdSchema = z.string().describe("ID ou chemin URL du groupe GitLab (ex: '42' ou 'wanadev/kp1'). Si vous n'avez que le nom, appelez d'abord list_groups pour trouver le chemin exact.");
-const dryRunSchema = z.boolean().default(true).describe("Mode simulation (defaut: true). A true, retourne un resume de l'action sans l'executer. Passer a false uniquement apres confirmation de l'utilisateur.");
+const dryRunSchema = z.boolean().default(true).describe("Dry run mode (default: true). When true, returns a preview of the action without executing it. Set to false only after user confirmation.");
 
 function dryRunResponse(action: string, details: Record<string, unknown>): { content: { type: "text"; text: string }[] } {
   const lines = Object.entries(details)
     .filter(([, v]) => v !== undefined)
     .map(([k, v]) => `  - **${k}:** ${v}`);
-  const text = `**[DRY RUN] ${action}**\n\n${lines.join("\n")}\n\n> Appelez a nouveau avec \`dry_run: false\` pour executer cette action.`;
+  const text = `**[DRY RUN] ${action}**\n\n${lines.join("\n")}\n\n> Please confirm to execute this action.`;
   return { content: [{ type: "text" as const, text }] };
 }
 
