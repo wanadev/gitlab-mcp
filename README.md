@@ -16,16 +16,7 @@ Serveur MCP (Model Context Protocol) pour gerer les **epics**, **issues** et **m
 2. Creer un token avec le scope `api`
 3. Copier le token
 
-### 2. Cloner et builder
-
-```bash
-git clone https://github.com/wanadev/gitlab-mcp.git
-cd gitlab-mcp/packages/mcp-gitlab
-npm install
-npm run build
-```
-
-### 3. Configurer Claude Desktop
+### 2. Configurer Claude Desktop
 
 Ajouter dans votre fichier `claude_desktop_config.json` :
 
@@ -36,8 +27,8 @@ Ajouter dans votre fichier `claude_desktop_config.json` :
 {
   "mcpServers": {
     "gitlab": {
-      "command": "node",
-      "args": ["/chemin/vers/gitlab-mcp/packages/mcp-gitlab/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "https://github.com/wanadev/gitlab-mcp/releases/download/v1.0.0/wanadev-mcp-gitlab-1.0.0.tgz"],
       "env": {
         "GITLAB_TOKEN": "glpat-xxxxxxxxxxxxxxxxxxxx",
         "GITLAB_BASE_URL": "https://gitlab.com",
@@ -48,9 +39,9 @@ Ajouter dans votre fichier `claude_desktop_config.json` :
 }
 ```
 
-> **Windows** : utiliser des doubles backslashes dans le chemin, ex: `"D:\\web\\gitlab-mcp\\packages\\mcp-gitlab\\dist\\index.js"`
+> Remplacer `v1.0.0` par la [derniere release](https://github.com/wanadev/gitlab-mcp/releases).
 
-### 4. Redemarrer Claude Desktop
+### 3. Redemarrer Claude Desktop
 
 Le serveur MCP sera disponible immediatement. Testez avec : *"Liste mes groupes GitLab"*
 
