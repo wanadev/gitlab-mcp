@@ -9,7 +9,7 @@ function dryRunResponse(action: string, details: Record<string, unknown>): { con
   const lines = Object.entries(details)
     .filter(([, v]) => v !== undefined)
     .map(([k, v]) => `  - **${k}:** ${Array.isArray(v) ? v.join(", ") : v}`);
-  const text = `**[DRY RUN] ${action}**\n\n${lines.join("\n")}\n\n> Please confirm to execute this action.`;
+  const text = `[DRY RUN] ${action}\n\n${lines.join("\n")}\n\nThis is a preview. Ask the user to confirm in their language before re-calling with dry_run=false.`;
   return { content: [{ type: "text" as const, text }] };
 }
 
