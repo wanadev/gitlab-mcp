@@ -3,6 +3,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
 import type { GitLabMilestone } from "../types.js";
 
+const groupIdSchema = z.string().describe("ID ou chemin du groupe GitLab");
+
 function formatMilestone(m: GitLabMilestone): string {
   const due = m.due_date ? ` — Echeance: ${m.due_date}` : "";
   const start = m.start_date ? ` — Debut: ${m.start_date}` : "";
@@ -33,15 +35,17 @@ function formatMilestoneDetail(m: GitLabMilestone): string {
 export function registerMilestoneTools(server: McpServer, client: GitLabClient): void {
   server.registerTool("list_milestones", {
     description:
-      "Lister les milestones du groupe GitLab. Filtrer par etat ou recherche textuelle.",
+      "Lister les milestones d'un groupe GitLab. Filtrer par etat ou recherche textuelle.",
     inputSchema: {
+      group_id: groupIdSchema,
       state: z.enum(["active", "closed"]).optional().describe("Filtrer par etat"),
       search: z.string().optional().describe("Recherche textuelle dans le titre"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
     try {
-      const milestones = await client.listGroupMilestones(args);
+      const { group_id, ...params } = args;
+      const milestones = await client.listGroupMilestones(group_id, params);
       return { content: [{ type: "text" as const, text: formatMilestones(milestones) }] };
     } catch (error) {
       return {
@@ -54,12 +58,13 @@ export function registerMilestoneTools(server: McpServer, client: GitLabClient):
   server.registerTool("get_milestone", {
     description: "Obtenir les details d'un milestone par son ID.",
     inputSchema: {
+      group_id: groupIdSchema,
       milestone_id: z.number().describe("ID du milestone"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
     try {
-      const milestone = await client.getMilestone(args.milestone_id);
+      const milestone = await client.getMilestone(args.group_id, args.milestone_id);
       return { content: [{ type: "text" as const, text: formatMilestoneDetail(milestone) }] };
     } catch (error) {
       return {
@@ -70,8 +75,9 @@ export function registerMilestoneTools(server: McpServer, client: GitLabClient):
   });
 
   server.registerTool("create_milestone", {
-    description: "Creer un nouveau milestone dans le groupe GitLab.",
+    description: "Creer un nouveau milestone dans un groupe GitLab.",
     inputSchema: {
+      group_id: groupIdSchema,
       title: z.string().describe("Titre du milestone"),
       description: z.string().optional().describe("Description du milestone"),
       start_date: z.string().optional().describe("Date de debut (YYYY-MM-DD)"),
@@ -80,7 +86,8 @@ export function registerMilestoneTools(server: McpServer, client: GitLabClient):
     annotations: { readOnlyHint: false },
   }, async (args) => {
     try {
-      const milestone = await client.createMilestone(args);
+      const { group_id, ...data } = args;
+      const milestone = await client.createMilestone(group_id, data);
       return {
         content: [{ type: "text" as const, text: `Milestone cree avec succes !\n\n${formatMilestoneDetail(milestone)}` }],
       };
