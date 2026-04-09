@@ -4,6 +4,15 @@ import type { GitLabClient } from "../client.js";
 import type { GitLabEpic, GitLabIssue } from "../types.js";
 
 const groupIdSchema = z.string().describe("ID ou chemin URL du groupe GitLab (ex: '42' ou 'wanadev/kp1'). Si vous n'avez que le nom, appelez d'abord list_groups pour trouver le chemin exact.");
+const dryRunSchema = z.boolean().default(true).describe("Mode simulation (defaut: true). A true, retourne un resume de l'action sans l'executer. Passer a false uniquement apres confirmation de l'utilisateur.");
+
+function dryRunResponse(action: string, details: Record<string, unknown>): { content: { type: "text"; text: string }[] } {
+  const lines = Object.entries(details)
+    .filter(([, v]) => v !== undefined)
+    .map(([k, v]) => `  - **${k}:** ${v}`);
+  const text = `**[DRY RUN] ${action}**\n\n${lines.join("\n")}\n\n> Appelez a nouveau avec \`dry_run: false\` pour executer cette action.`;
+  return { content: [{ type: "text" as const, text }] };
+}
 
 function formatEpic(e: GitLabEpic): string {
   const labels = e.labels.length > 0 ? ` — Labels: ${e.labels.join(", ")}` : "";
@@ -89,7 +98,7 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
   });
 
   server.registerTool("create_epic", {
-    description: "Creer un nouvel epic dans un groupe GitLab.",
+    description: "Creer un nouvel epic dans un groupe GitLab. Par defaut dry_run=true : retourne un apercu sans creer. Passer dry_run=false apres confirmation.",
     inputSchema: {
       group_id: groupIdSchema,
       title: z.string().describe("Titre de l'epic"),
@@ -97,11 +106,15 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
       labels: z.string().optional().describe("Labels separes par virgule"),
       start_date: z.string().optional().describe("Date de debut (YYYY-MM-DD)"),
       due_date: z.string().optional().describe("Date d'echeance (YYYY-MM-DD)"),
+      dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
   }, async (args) => {
     try {
-      const { group_id, ...data } = args;
+      const { group_id, dry_run, ...data } = args;
+      if (dry_run) {
+        return dryRunResponse("Creer un epic", { groupe: group_id, ...data });
+      }
       const epic = await client.createEpic(group_id, data);
       return {
         content: [{ type: "text" as const, text: `Epic cree avec succes !\n\n${formatEpicDetail(epic)}` }],
@@ -115,7 +128,7 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
   });
 
   server.registerTool("update_epic", {
-    description: "Mettre a jour un epic existant (titre, description, labels, dates).",
+    description: "Mettre a jour un epic existant. Par defaut dry_run=true : retourne un apercu sans modifier. Passer dry_run=false apres confirmation.",
     inputSchema: {
       group_id: groupIdSchema,
       epic_iid: z.number().describe("Numero de l'epic (IID)"),
@@ -124,11 +137,15 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
       labels: z.string().optional().describe("Nouveaux labels (separes par virgule)"),
       start_date: z.string().optional().describe("Nouvelle date de debut (YYYY-MM-DD)"),
       due_date: z.string().optional().describe("Nouvelle date d'echeance (YYYY-MM-DD)"),
+      dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
   }, async (args) => {
     try {
-      const { group_id, epic_iid, ...data } = args;
+      const { group_id, epic_iid, dry_run, ...data } = args;
+      if (dry_run) {
+        return dryRunResponse("Modifier l'epic", { groupe: group_id, epic_iid, ...data });
+      }
       const epic = await client.updateEpic(group_id, epic_iid, data);
       return {
         content: [{ type: "text" as const, text: `Epic mis a jour !\n\n${formatEpicDetail(epic)}` }],
@@ -142,14 +159,18 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
   });
 
   server.registerTool("close_epic", {
-    description: "Fermer un epic.",
+    description: "Fermer un epic. Par defaut dry_run=true : retourne un apercu sans fermer. Passer dry_run=false apres confirmation.",
     inputSchema: {
       group_id: groupIdSchema,
       epic_iid: z.number().describe("Numero de l'epic (IID) a fermer"),
+      dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
   }, async (args) => {
     try {
+      if (args.dry_run) {
+        return dryRunResponse("Fermer l'epic", { groupe: args.group_id, epic_iid: args.epic_iid });
+      }
       const epic = await client.closeEpic(args.group_id, args.epic_iid);
       return {
         content: [{ type: "text" as const, text: `Epic #${epic.iid} ferme.\n\n${formatEpicDetail(epic)}` }],
@@ -188,15 +209,23 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
 
   server.registerTool("add_issue_to_epic", {
     description:
-      "Rattacher une issue a un epic. ATTENTION : utiliser l'ID global de l'issue (pas le IID projet). L'ID global est affiche par list_epic_issues et list_issues.",
+      "Rattacher une issue a un epic. Par defaut dry_run=true. ATTENTION : utiliser l'ID global de l'issue (pas le IID projet).",
     inputSchema: {
       group_id: groupIdSchema,
       epic_iid: z.number().describe("Numero de l'epic (IID)"),
       issue_id: z.number().describe("ID global de l'issue (pas le IID projet)"),
+      dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
   }, async (args) => {
     try {
+      if (args.dry_run) {
+        return dryRunResponse("Rattacher une issue a un epic", {
+          groupe: args.group_id,
+          epic_iid: args.epic_iid,
+          issue_id: args.issue_id,
+        });
+      }
       await client.addIssueToEpic(args.group_id, args.epic_iid, args.issue_id);
       return {
         content: [{ type: "text" as const, text: `Issue ${args.issue_id} rattachee a l'epic #${args.epic_iid}.` }],

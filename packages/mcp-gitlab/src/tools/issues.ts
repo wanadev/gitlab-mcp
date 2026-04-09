@@ -3,6 +3,16 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
 import type { GitLabIssue } from "../types.js";
 
+const dryRunSchema = z.boolean().default(true).describe("Mode simulation (defaut: true). A true, retourne un resume de l'action sans l'executer. Passer a false uniquement apres confirmation de l'utilisateur.");
+
+function dryRunResponse(action: string, details: Record<string, unknown>): { content: { type: "text"; text: string }[] } {
+  const lines = Object.entries(details)
+    .filter(([, v]) => v !== undefined)
+    .map(([k, v]) => `  - **${k}:** ${Array.isArray(v) ? v.join(", ") : v}`);
+  const text = `**[DRY RUN] ${action}**\n\n${lines.join("\n")}\n\n> Appelez a nouveau avec \`dry_run: false\` pour executer cette action.`;
+  return { content: [{ type: "text" as const, text }] };
+}
+
 function formatIssue(i: GitLabIssue): string {
   const assignees =
     i.assignees.length > 0
@@ -92,7 +102,7 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
   });
 
   server.registerTool("create_issue", {
-    description: "Creer une nouvelle issue dans un projet du groupe.",
+    description: "Creer une nouvelle issue dans un projet. Par defaut dry_run=true : retourne un apercu sans creer. Passer dry_run=false apres confirmation.",
     inputSchema: {
       project_id: z.number().describe("ID du projet"),
       title: z.string().describe("Titre de l'issue"),
@@ -103,11 +113,15 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
       due_date: z.string().optional().describe("Date d'echeance (YYYY-MM-DD)"),
       weight: z.number().optional().describe("Poids de l'issue"),
       epic_id: z.number().optional().describe("ID global de l'epic a rattacher"),
+      dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
   }, async (args) => {
     try {
-      const { project_id, ...data } = args;
+      const { project_id, dry_run, ...data } = args;
+      if (dry_run) {
+        return dryRunResponse("Creer une issue", { project_id, ...data });
+      }
       const issue = await client.createIssue(project_id, data);
       return {
         content: [{ type: "text" as const, text: `Issue creee avec succes !\n\n${formatIssueDetail(issue)}` }],
@@ -122,7 +136,7 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
 
   server.registerTool("update_issue", {
     description:
-      "Mettre a jour une issue existante (titre, description, labels, milestone, assignees, etc.).",
+      "Mettre a jour une issue existante. Par defaut dry_run=true : retourne un apercu sans modifier. Passer dry_run=false apres confirmation.",
     inputSchema: {
       project_id: z.number().describe("ID du projet"),
       issue_iid: z.number().describe("Numero de l'issue (IID)"),
@@ -133,11 +147,15 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
       assignee_ids: z.array(z.number()).optional().describe("IDs des assignees"),
       due_date: z.string().optional().describe("Nouvelle date d'echeance (YYYY-MM-DD)"),
       weight: z.number().optional().describe("Nouveau poids"),
+      dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
   }, async (args) => {
     try {
-      const { project_id, issue_iid, ...data } = args;
+      const { project_id, issue_iid, dry_run, ...data } = args;
+      if (dry_run) {
+        return dryRunResponse("Modifier l'issue", { project_id, issue_iid, ...data });
+      }
       const issue = await client.updateIssue(project_id, issue_iid, data);
       return {
         content: [{ type: "text" as const, text: `Issue mise a jour !\n\n${formatIssueDetail(issue)}` }],
@@ -151,14 +169,18 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
   });
 
   server.registerTool("close_issue", {
-    description: "Fermer une issue.",
+    description: "Fermer une issue. Par defaut dry_run=true : retourne un apercu sans fermer. Passer dry_run=false apres confirmation.",
     inputSchema: {
       project_id: z.number().describe("ID du projet"),
       issue_iid: z.number().describe("Numero de l'issue (IID) a fermer"),
+      dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
   }, async (args) => {
     try {
+      if (args.dry_run) {
+        return dryRunResponse("Fermer l'issue", { project_id: args.project_id, issue_iid: args.issue_iid });
+      }
       const issue = await client.closeIssue(args.project_id, args.issue_iid);
       return {
         content: [{ type: "text" as const, text: `Issue #${issue.iid} fermee.\n\n${formatIssueDetail(issue)}` }],
