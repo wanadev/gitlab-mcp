@@ -6,18 +6,17 @@ import type {
   GitLabUser,
   GitLabProject,
   GitLabMember,
+  GitLabGroup,
 } from "./types.js";
 
 export class GitLabClient {
   private baseUrl: string;
   private token: string;
-  private groupId: string;
   private readOnly: boolean;
 
   constructor(config: GitLabConfig) {
     this.baseUrl = config.baseUrl.replace(/\/+$/, "");
     this.token = config.token;
-    this.groupId = config.groupId;
     this.readOnly = config.readOnly;
   }
 
@@ -164,9 +163,22 @@ export class GitLabClient {
     return results.slice(0, maxItems);
   }
 
+  // --- Groups ---
+
+  async listGroups(params?: {
+    search?: string;
+    top_level_only?: boolean;
+  }): Promise<GitLabGroup[]> {
+    const queryParams: Record<string, string> = {};
+    if (params?.search) queryParams["search"] = params.search;
+    if (params?.top_level_only) queryParams["top_level_only"] = "true";
+
+    return this.paginate<GitLabGroup>("/groups", queryParams);
+  }
+
   // --- Epics ---
 
-  async listEpics(params?: {
+  async listEpics(groupId: string, params?: {
     state?: string;
     search?: string;
     labels?: string;
@@ -181,19 +193,19 @@ export class GitLabClient {
     if (params?.sort) queryParams["sort"] = params.sort;
 
     return this.paginate<GitLabEpic>(
-      `/groups/${encodeURIComponent(this.groupId)}/epics`,
+      `/groups/${encodeURIComponent(groupId)}/epics`,
       queryParams,
     );
   }
 
-  async getEpic(epicIid: number): Promise<GitLabEpic> {
+  async getEpic(groupId: string, epicIid: number): Promise<GitLabEpic> {
     return this.request<GitLabEpic>(
       "GET",
-      `/groups/${encodeURIComponent(this.groupId)}/epics/${epicIid}`,
+      `/groups/${encodeURIComponent(groupId)}/epics/${epicIid}`,
     );
   }
 
-  async createEpic(data: {
+  async createEpic(groupId: string, data: {
     title: string;
     description?: string;
     labels?: string;
@@ -202,12 +214,13 @@ export class GitLabClient {
   }): Promise<GitLabEpic> {
     return this.request<GitLabEpic>(
       "POST",
-      `/groups/${encodeURIComponent(this.groupId)}/epics`,
+      `/groups/${encodeURIComponent(groupId)}/epics`,
       data,
     );
   }
 
   async updateEpic(
+    groupId: string,
     epicIid: number,
     data: {
       title?: string;
@@ -220,34 +233,35 @@ export class GitLabClient {
   ): Promise<GitLabEpic> {
     return this.request<GitLabEpic>(
       "PUT",
-      `/groups/${encodeURIComponent(this.groupId)}/epics/${epicIid}`,
+      `/groups/${encodeURIComponent(groupId)}/epics/${epicIid}`,
       data,
     );
   }
 
-  async closeEpic(epicIid: number): Promise<GitLabEpic> {
-    return this.updateEpic(epicIid, { state_event: "close" });
+  async closeEpic(groupId: string, epicIid: number): Promise<GitLabEpic> {
+    return this.updateEpic(groupId, epicIid, { state_event: "close" });
   }
 
-  async listEpicIssues(epicIid: number): Promise<GitLabIssue[]> {
+  async listEpicIssues(groupId: string, epicIid: number): Promise<GitLabIssue[]> {
     return this.paginate<GitLabIssue>(
-      `/groups/${encodeURIComponent(this.groupId)}/epics/${epicIid}/issues`,
+      `/groups/${encodeURIComponent(groupId)}/epics/${epicIid}/issues`,
     );
   }
 
   async addIssueToEpic(
+    groupId: string,
     epicIid: number,
     issueId: number,
   ): Promise<{ id: number; epic: GitLabEpic; issue: GitLabIssue }> {
     return this.request(
       "POST",
-      `/groups/${encodeURIComponent(this.groupId)}/epics/${epicIid}/issues/${issueId}`,
+      `/groups/${encodeURIComponent(groupId)}/epics/${epicIid}/issues/${issueId}`,
     );
   }
 
   // --- Issues ---
 
-  async listGroupIssues(params?: {
+  async listGroupIssues(groupId: string, params?: {
     state?: string;
     search?: string;
     labels?: string;
@@ -267,7 +281,7 @@ export class GitLabClient {
     if (params?.sort) queryParams["sort"] = params.sort;
 
     return this.paginate<GitLabIssue>(
-      `/groups/${encodeURIComponent(this.groupId)}/issues`,
+      `/groups/${encodeURIComponent(groupId)}/issues`,
       queryParams,
     );
   }
@@ -329,7 +343,7 @@ export class GitLabClient {
 
   // --- Milestones ---
 
-  async listGroupMilestones(params?: {
+  async listGroupMilestones(groupId: string, params?: {
     state?: string;
     search?: string;
   }): Promise<GitLabMilestone[]> {
@@ -338,19 +352,19 @@ export class GitLabClient {
     if (params?.search) queryParams["search"] = params.search;
 
     return this.paginate<GitLabMilestone>(
-      `/groups/${encodeURIComponent(this.groupId)}/milestones`,
+      `/groups/${encodeURIComponent(groupId)}/milestones`,
       queryParams,
     );
   }
 
-  async getMilestone(milestoneId: number): Promise<GitLabMilestone> {
+  async getMilestone(groupId: string, milestoneId: number): Promise<GitLabMilestone> {
     return this.request<GitLabMilestone>(
       "GET",
-      `/groups/${encodeURIComponent(this.groupId)}/milestones/${milestoneId}`,
+      `/groups/${encodeURIComponent(groupId)}/milestones/${milestoneId}`,
     );
   }
 
-  async createMilestone(data: {
+  async createMilestone(groupId: string, data: {
     title: string;
     description?: string;
     start_date?: string;
@@ -358,14 +372,14 @@ export class GitLabClient {
   }): Promise<GitLabMilestone> {
     return this.request<GitLabMilestone>(
       "POST",
-      `/groups/${encodeURIComponent(this.groupId)}/milestones`,
+      `/groups/${encodeURIComponent(groupId)}/milestones`,
       data,
     );
   }
 
   // --- Utils ---
 
-  async listProjects(params?: {
+  async listProjects(groupId: string, params?: {
     search?: string;
     archived?: string;
   }): Promise<GitLabProject[]> {
@@ -374,19 +388,19 @@ export class GitLabClient {
     if (params?.archived) queryParams["archived"] = params.archived;
 
     return this.paginate<GitLabProject>(
-      `/groups/${encodeURIComponent(this.groupId)}/projects`,
+      `/groups/${encodeURIComponent(groupId)}/projects`,
       queryParams,
     );
   }
 
-  async listGroupMembers(params?: {
+  async listGroupMembers(groupId: string, params?: {
     search?: string;
   }): Promise<GitLabMember[]> {
     const queryParams: Record<string, string> = {};
     if (params?.search) queryParams["search"] = params.search;
 
     return this.paginate<GitLabMember>(
-      `/groups/${encodeURIComponent(this.groupId)}/members`,
+      `/groups/${encodeURIComponent(groupId)}/members`,
       queryParams,
     );
   }

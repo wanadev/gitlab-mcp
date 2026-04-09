@@ -1,7 +1,9 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
-import type { GitLabProject, GitLabMember, GitLabUser } from "../types.js";
+import type { GitLabProject, GitLabMember, GitLabUser, GitLabGroup } from "../types.js";
+
+const groupIdSchema = z.string().describe("ID ou chemin du groupe GitLab");
 
 function formatProject(p: GitLabProject): string {
   const archived = p.archived ? " [ARCHIVE]" : "";
@@ -37,18 +39,51 @@ function formatUser(u: GitLabUser): string {
   return `**${u.name}** (@${u.username})\nID: ${u.id}\nEtat: ${u.state}\n${u.web_url}`;
 }
 
+function formatGroup(g: GitLabGroup): string {
+  const parent = g.parent_id ? ` — parent: ${g.parent_id}` : " (top-level)";
+  const desc = g.description ? ` — ${g.description}` : "";
+  return `**${g.name}** (id:${g.id}, path: ${g.full_path})${parent}${desc}\n  ${g.web_url}`;
+}
+
+function formatGroups(groups: GitLabGroup[]): string {
+  if (groups.length === 0) return "Aucun groupe trouve.";
+  return `${groups.length} groupe(s) :\n\n${groups.map(formatGroup).join("\n\n")}`;
+}
+
 export function registerUtilTools(server: McpServer, client: GitLabClient): void {
+  server.registerTool("list_groups", {
+    description:
+      "Lister les groupes GitLab accessibles. Utiliser ce tool pour decouvrir les group_id a passer aux autres tools.",
+    inputSchema: {
+      search: z.string().optional().describe("Recherche textuelle dans le nom du groupe"),
+      top_level_only: z.boolean().optional().describe("Ne retourner que les groupes de premier niveau"),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const groups = await client.listGroups(args);
+      return { content: [{ type: "text" as const, text: formatGroups(groups) }] };
+    } catch (error) {
+      return {
+        content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }],
+        isError: true,
+      };
+    }
+  });
+
   server.registerTool("list_projects", {
     description:
-      "Lister les projets du groupe GitLab. Filtrer par recherche ou statut d'archivage.",
+      "Lister les projets d'un groupe GitLab. Filtrer par recherche ou statut d'archivage.",
     inputSchema: {
+      group_id: groupIdSchema,
       search: z.string().optional().describe("Recherche textuelle dans le nom du projet"),
       archived: z.enum(["true", "false"]).optional().describe("Filtrer les projets archives"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
     try {
-      const projects = await client.listProjects(args);
+      const { group_id, ...params } = args;
+      const projects = await client.listProjects(group_id, params);
       return { content: [{ type: "text" as const, text: formatProjects(projects) }] };
     } catch (error) {
       return {
@@ -59,14 +94,16 @@ export function registerUtilTools(server: McpServer, client: GitLabClient): void
   });
 
   server.registerTool("list_group_members", {
-    description: "Lister les membres du groupe GitLab avec leur niveau d'acces.",
+    description: "Lister les membres d'un groupe GitLab avec leur niveau d'acces.",
     inputSchema: {
+      group_id: groupIdSchema,
       search: z.string().optional().describe("Recherche par nom ou username"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
     try {
-      const members = await client.listGroupMembers(args);
+      const { group_id, ...params } = args;
+      const members = await client.listGroupMembers(group_id, params);
       return { content: [{ type: "text" as const, text: formatMembers(members) }] };
     } catch (error) {
       return {

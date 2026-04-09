@@ -1,8 +1,16 @@
 export interface GitLabConfig {
   baseUrl: string;
   token: string;
-  groupId: string;
   readOnly: boolean;
+}
+
+export interface GitLabGroup {
+  id: number;
+  name: string;
+  full_path: string;
+  web_url: string;
+  description: string | null;
+  parent_id: number | null;
 }
 
 export interface GitLabEpic {

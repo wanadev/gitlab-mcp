@@ -46,8 +46,9 @@ function formatIssueDetail(i: GitLabIssue): string {
 export function registerIssueTools(server: McpServer, client: GitLabClient): void {
   server.registerTool("list_issues", {
     description:
-      "Lister les issues du groupe GitLab. Filtrer par etat, recherche, labels, milestone ou assignee.",
+      "Lister les issues d'un groupe GitLab. Filtrer par etat, recherche, labels, milestone ou assignee.",
     inputSchema: {
+      group_id: z.string().describe("ID ou chemin du groupe GitLab"),
       state: z.enum(["opened", "closed", "all"]).optional().describe("Filtrer par etat"),
       search: z.string().optional().describe("Recherche textuelle"),
       labels: z.string().optional().describe("Labels (separes par virgule)"),
@@ -59,7 +60,8 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
     annotations: { readOnlyHint: true },
   }, async (args) => {
     try {
-      const issues = await client.listGroupIssues(args);
+      const { group_id, ...params } = args;
+      const issues = await client.listGroupIssues(group_id, params);
       return { content: [{ type: "text" as const, text: formatIssues(issues) }] };
     } catch (error) {
       return {

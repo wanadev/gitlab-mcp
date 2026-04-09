@@ -25,15 +25,10 @@ async function main(): Promise<void> {
     "Token d'acces personnel GitLab (PAT) avec les scopes api ou read_api.",
   );
 
-  const groupId = getEnvOrExit(
-    "GITLAB_GROUP_ID",
-    "ID ou chemin URL-encode du groupe GitLab (ex: 12345 ou mon-groupe).",
-  );
-
   const baseUrl = process.env["GITLAB_BASE_URL"] ?? "https://gitlab.com";
   const readOnly = process.env["GITLAB_READ_ONLY"] === "true";
 
-  const client = new GitLabClient({ baseUrl, token, groupId, readOnly });
+  const client = new GitLabClient({ baseUrl, token, readOnly });
 
   const server = new McpServer({
     name: "@wanadev/mcp-gitlab",
