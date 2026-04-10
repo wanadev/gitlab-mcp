@@ -1,23 +1,26 @@
 import type {
-  GitLabConfig,
-  GitLabEpic,
-  GitLabIssue,
-  GitLabMilestone,
-  GitLabUser,
-  GitLabProject,
-  GitLabMember,
-  GitLabGroup,
-  GitLabMergeRequest,
-  GitLabLabel,
-  GitLabNote,
-  GitLabBoard,
-  GitLabIteration,
+  GitLabConfig, GitLabEpic, GitLabIssue, GitLabMilestone,
+  GitLabUser, GitLabProject, GitLabMember, GitLabGroup,
+  GitLabMergeRequest, GitLabLabel, GitLabNote, GitLabBoard, GitLabIteration,
 } from "./types.js";
+import {
+  toGid, type ConnectionExtractor,
+  Q_CURRENT_USER, Q_GROUPS, Q_EPICS, Q_EPIC, Q_EPIC_ISSUES, Q_EPIC_NOTES,
+  Q_GROUP_ISSUES, Q_ISSUE, Q_ISSUE_NOTES,
+  Q_MILESTONES, Q_MILESTONE,
+  Q_MERGE_REQUESTS, Q_MERGE_REQUEST,
+  Q_ITERATIONS, Q_PROJECTS, Q_MEMBERS, Q_LABELS, Q_BOARDS, Q_PROJECT_PATH,
+  M_CREATE_EPIC, M_UPDATE_EPIC, M_CREATE_MILESTONE, M_UPDATE_MILESTONE,
+  M_CREATE_ISSUE, M_UPDATE_ISSUE, M_CREATE_NOTE, M_EPIC_ADD_ISSUE,
+  mapUser, mapEpic, mapIssue, mapMilestone, mapMergeRequest,
+  mapGroup, mapProject, mapMember, mapLabel, mapNote, mapBoard, mapIteration,
+} from "./graphql.js";
 
 export class GitLabClient {
   private baseUrl: string;
   private token: string;
   private readOnly: boolean;
+  private projectPathCache = new Map<number, string>();
 
   constructor(config: GitLabConfig) {
     this.baseUrl = config.baseUrl.replace(/\/+$/, "");
@@ -25,29 +28,33 @@ export class GitLabClient {
     this.readOnly = config.readOnly;
   }
 
-  private async request<T>(
-    method: string,
-    path: string,
-    body?: unknown,
+  // ---------------------------------------------------------------------------
+  // Core GraphQL methods
+  // ---------------------------------------------------------------------------
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async graphql<T = any>(
+    query: string,
+    variables?: Record<string, unknown>,
   ): Promise<T> {
-    if (this.readOnly && method !== "GET") {
+    if (this.readOnly && query.trimStart().startsWith("mutation")) {
       throw new Error(
-        `Mode lecture seule actif (GITLAB_READ_ONLY=true). Impossible d'effectuer une requete ${method}.`,
+        "Mode lecture seule actif (GITLAB_READ_ONLY=true). Impossible d'effectuer une mutation.",
       );
     }
 
-    const url = new URL(`/api/v4${path}`, this.baseUrl);
+    const url = `${this.baseUrl}/api/graphql`;
 
     let lastError: Error | null = null;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const response = await fetch(url.toString(), {
-          method,
+        const response = await fetch(url, {
+          method: "POST",
           headers: {
             "PRIVATE-TOKEN": this.token,
             "Content-Type": "application/json",
           },
-          body: body ? JSON.stringify(body) : undefined,
+          body: JSON.stringify({ query, variables }),
           signal: AbortSignal.timeout(15_000),
         });
 
@@ -62,15 +69,18 @@ export class GitLabClient {
 
         if (!response.ok) {
           const text = await response.text().catch(() => "");
-          const message = this.formatHttpError(response.status, text, path);
-          throw new Error(message);
+          throw new Error(this.formatHttpError(response.status, text));
         }
 
-        if (response.status === 204) {
-          return undefined as T;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const json = (await response.json()) as { data?: T; errors?: any[] };
+
+        if (json.errors?.length) {
+          const messages = json.errors.map((e: { message: string }) => e.message).join("; ");
+          throw new Error(`GraphQL error: ${messages}`);
         }
 
-        return (await response.json()) as T;
+        return json.data as T;
       } catch (error) {
         if (
           error instanceof Error &&
@@ -79,14 +89,9 @@ export class GitLabClient {
           throw error;
         }
         lastError = error instanceof Error ? error : new Error(String(error));
-        if (
-          error instanceof DOMException &&
-          error.name === "TimeoutError"
-        ) {
+        if (error instanceof DOMException && error.name === "TimeoutError") {
           if (attempt < 2) continue;
-        } else if (
-          !(error instanceof Error && error.message.includes("429"))
-        ) {
+        } else {
           throw lastError;
         }
       }
@@ -95,93 +100,88 @@ export class GitLabClient {
     throw lastError ?? new Error("Echec apres 3 tentatives");
   }
 
-  private formatHttpError(
-    status: number,
-    body: string,
-    path: string,
-  ): string {
-    let detail = "";
-    try {
-      const parsed = JSON.parse(body) as { message?: string; error?: string };
-      detail = parsed.message ?? parsed.error ?? body;
-    } catch {
-      detail = body;
-    }
-
-    switch (status) {
-      case 401:
-        return "Authentification echouee. Verifiez votre GITLAB_TOKEN.";
-      case 403:
-        return `Acces refuse (403) sur ${path}. Verifiez les permissions du token et le niveau GitLab (Premium/Ultimate pour les epics).`;
-      case 404:
-        return `Ressource introuvable (404) : ${path}. Verifiez l'ID du groupe/projet.`;
-      default:
-        return `Erreur GitLab ${status} sur ${path}: ${detail}`;
-    }
-  }
-
-  async paginate<T>(
-    path: string,
-    params?: Record<string, string>,
-  ): Promise<T[]> {
-    const results: T[] = [];
-    let page = 1;
-    const maxItems = 500;
+  private async graphqlPaginate<TRaw, TOut>(
+    query: string,
+    variables: Record<string, unknown>,
+    extract: ConnectionExtractor<TRaw>,
+    mapper: (node: TRaw) => TOut,
+    maxItems = 500,
+  ): Promise<TOut[]> {
+    const results: TOut[] = [];
+    let after: string | null = null;
 
     while (results.length < maxItems) {
-      const url = new URL(`/api/v4${path}`, this.baseUrl);
-      url.searchParams.set("per_page", "100");
-      url.searchParams.set("page", String(page));
-      if (params) {
-        for (const [key, value] of Object.entries(params)) {
-          if (value !== undefined && value !== "") {
-            url.searchParams.set(key, value);
-          }
-        }
+      const data = await this.graphql(query, { ...variables, after });
+      const connection = extract(data);
+      if (!connection || !connection.nodes) break;
+
+      for (const node of connection.nodes) {
+        results.push(mapper(node));
       }
 
-      const response = await fetch(url.toString(), {
-        method: "GET",
-        headers: {
-          "PRIVATE-TOKEN": this.token,
-          "Content-Type": "application/json",
-        },
-        signal: AbortSignal.timeout(15_000),
-      });
-
-      if (!response.ok) {
-        const text = await response.text().catch(() => "");
-        throw new Error(this.formatHttpError(response.status, text, path));
-      }
-
-      const data = (await response.json()) as T[];
-      if (data.length === 0) break;
-
-      results.push(...data);
-
-      const totalPages = response.headers.get("X-Total-Pages");
-      if (totalPages && page >= parseInt(totalPages, 10)) break;
-
-      page++;
+      if (!connection.pageInfo.hasNextPage || !connection.pageInfo.endCursor) break;
+      after = connection.pageInfo.endCursor;
     }
 
     return results.slice(0, maxItems);
   }
 
-  // --- Groups ---
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async mutate<T>(query: string, input: Record<string, unknown>, resultKey: string): Promise<any> {
+    const data = await this.graphql<Record<string, { errors?: string[] } & T>>(query, { input });
+    const result = data[resultKey];
+    if (result?.errors?.length) {
+      throw new Error(`GitLab mutation error: ${result.errors.join("; ")}`);
+    }
+    return result;
+  }
+
+  private formatHttpError(status: number, body: string): string {
+    switch (status) {
+      case 401:
+        return "Authentification echouee. Verifiez votre GITLAB_TOKEN.";
+      case 403:
+        return "Acces refuse (403). Verifiez les permissions du token et le niveau GitLab (Premium/Ultimate pour les epics).";
+      case 404:
+        return "Endpoint GraphQL introuvable (404). Verifiez GITLAB_BASE_URL.";
+      default:
+        return `Erreur GitLab ${status}: ${body.slice(0, 200)}`;
+    }
+  }
+
+  private async resolveProjectPath(projectId: number): Promise<string> {
+    const cached = this.projectPathCache.get(projectId);
+    if (cached) return cached;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await this.graphql<any>(Q_PROJECT_PATH, { id: toGid("Project", projectId) });
+    const fullPath = data.project?.fullPath;
+    if (!fullPath) throw new Error(`Project ${projectId} not found`);
+
+    this.projectPathCache.set(projectId, fullPath);
+    return fullPath;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Groups
+  // ---------------------------------------------------------------------------
 
   async listGroups(params?: {
     search?: string;
     top_level_only?: boolean;
   }): Promise<GitLabGroup[]> {
-    const queryParams: Record<string, string> = {};
-    if (params?.search) queryParams["search"] = params.search;
-    if (params?.top_level_only) queryParams["top_level_only"] = "true";
-
-    return this.paginate<GitLabGroup>("/groups", queryParams);
+    return this.graphqlPaginate(
+      Q_GROUPS,
+      { search: params?.search ?? null },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (d: any) => d.groups,
+      mapGroup,
+    );
   }
 
-  // --- Epics ---
+  // ---------------------------------------------------------------------------
+  // Epics
+  // ---------------------------------------------------------------------------
 
   async listEpics(groupId: string, params?: {
     state?: string;
@@ -190,24 +190,25 @@ export class GitLabClient {
     order_by?: string;
     sort?: string;
   }): Promise<GitLabEpic[]> {
-    const queryParams: Record<string, string> = {};
-    if (params?.state) queryParams["state"] = params.state;
-    if (params?.search) queryParams["search"] = params.search;
-    if (params?.labels) queryParams["labels"] = params.labels;
-    if (params?.order_by) queryParams["order_by"] = params.order_by;
-    if (params?.sort) queryParams["sort"] = params.sort;
-
-    return this.paginate<GitLabEpic>(
-      `/groups/${encodeURIComponent(groupId)}/epics`,
-      queryParams,
+    return this.graphqlPaginate(
+      Q_EPICS,
+      {
+        fullPath: groupId,
+        state: params?.state && params.state !== "all" ? params.state : null,
+        search: params?.search ?? null,
+        labelName: params?.labels ? params.labels.split(",").map(s => s.trim()) : null,
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (d: any) => d.group?.epics,
+      mapEpic,
     );
   }
 
   async getEpic(groupId: string, epicIid: number): Promise<GitLabEpic> {
-    return this.request<GitLabEpic>(
-      "GET",
-      `/groups/${encodeURIComponent(groupId)}/epics/${epicIid}`,
-    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await this.graphql<any>(Q_EPIC, { fullPath: groupId, iid: String(epicIid) });
+    if (!data.group?.epic) throw new Error(`Epic #${epicIid} not found in group ${groupId}`);
+    return mapEpic(data.group.epic);
   }
 
   async createEpic(groupId: string, data: {
@@ -218,11 +219,19 @@ export class GitLabClient {
     start_date?: string;
     due_date?: string;
   }): Promise<GitLabEpic> {
-    return this.request<GitLabEpic>(
-      "POST",
-      `/groups/${encodeURIComponent(groupId)}/epics`,
-      data,
-    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const input: any = {
+      groupPath: groupId,
+      title: data.title,
+    };
+    if (data.description) input.description = data.description;
+    if (data.labels) input.addLabelIds = data.labels.split(",").map(s => s.trim());
+    if (data.milestone_id) input.milestoneId = toGid("Milestone", data.milestone_id);
+    if (data.start_date) input.startDateFixed = data.start_date;
+    if (data.due_date) input.dueDateFixed = data.due_date;
+
+    const result = await this.mutate(M_CREATE_EPIC, input, "createEpic");
+    return mapEpic(result.epic);
   }
 
   async updateEpic(
@@ -238,11 +247,21 @@ export class GitLabClient {
       state_event?: string;
     },
   ): Promise<GitLabEpic> {
-    return this.request<GitLabEpic>(
-      "PUT",
-      `/groups/${encodeURIComponent(groupId)}/epics/${epicIid}`,
-      data,
-    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const input: any = {
+      groupPath: groupId,
+      iid: String(epicIid),
+    };
+    if (data.title) input.title = data.title;
+    if (data.description) input.description = data.description;
+    if (data.labels) input.addLabelIds = data.labels.split(",").map(s => s.trim());
+    if (data.milestone_id) input.milestoneId = toGid("Milestone", data.milestone_id);
+    if (data.start_date) input.startDateFixed = data.start_date;
+    if (data.due_date) input.dueDateFixed = data.due_date;
+    if (data.state_event === "close") input.stateEvent = "CLOSE";
+
+    const result = await this.mutate(M_UPDATE_EPIC, input, "updateEpic");
+    return mapEpic(result.epic);
   }
 
   async closeEpic(groupId: string, epicIid: number): Promise<GitLabEpic> {
@@ -250,8 +269,13 @@ export class GitLabClient {
   }
 
   async listEpicIssues(groupId: string, epicIid: number): Promise<GitLabIssue[]> {
-    return this.paginate<GitLabIssue>(
-      `/groups/${encodeURIComponent(groupId)}/epics/${epicIid}/issues`,
+    return this.graphqlPaginate(
+      Q_EPIC_ISSUES,
+      { fullPath: groupId, epicIid: String(epicIid) },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (d: any) => d.group?.epic?.issues,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (n: any) => mapIssue(n, this.baseUrl),
     );
   }
 
@@ -260,27 +284,36 @@ export class GitLabClient {
     epicIid: number,
     issueId: number,
   ): Promise<{ id: number; epic: GitLabEpic; issue: GitLabIssue }> {
-    return this.request(
-      "POST",
-      `/groups/${encodeURIComponent(groupId)}/epics/${epicIid}/issues/${issueId}`,
-    );
+    const epic = await this.getEpic(groupId, epicIid);
+    const input = {
+      iid: String(epicIid),
+      groupPath: groupId,
+      issueIid: String(issueId),
+    };
+    await this.mutate(M_EPIC_ADD_ISSUE, input, "epicAddIssue");
+    return { id: 0, epic, issue: {} as GitLabIssue };
   }
 
   async listEpicNotes(groupId: string, epicIid: number): Promise<GitLabNote[]> {
-    return this.paginate<GitLabNote>(
-      `/groups/${encodeURIComponent(groupId)}/epics/${epicIid}/notes`,
+    return this.graphqlPaginate(
+      Q_EPIC_NOTES,
+      { fullPath: groupId, epicIid: String(epicIid) },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (d: any) => d.group?.epic?.notes,
+      mapNote,
     );
   }
 
   async addEpicNote(groupId: string, epicIid: number, body: string): Promise<GitLabNote> {
-    return this.request<GitLabNote>(
-      "POST",
-      `/groups/${encodeURIComponent(groupId)}/epics/${epicIid}/notes`,
-      { body },
-    );
+    const epic = await this.getEpic(groupId, epicIid);
+    const noteableId = toGid("Epic", epic.id);
+    const result = await this.mutate(M_CREATE_NOTE, { noteableId, body }, "createNote");
+    return mapNote(result.note);
   }
 
-  // --- Issues ---
+  // ---------------------------------------------------------------------------
+  // Issues
+  // ---------------------------------------------------------------------------
 
   async listGroupIssues(groupId: string, params?: {
     state?: string;
@@ -291,27 +324,29 @@ export class GitLabClient {
     order_by?: string;
     sort?: string;
   }): Promise<GitLabIssue[]> {
-    const queryParams: Record<string, string> = {};
-    if (params?.state) queryParams["state"] = params.state;
-    if (params?.search) queryParams["search"] = params.search;
-    if (params?.labels) queryParams["labels"] = params.labels;
-    if (params?.milestone) queryParams["milestone"] = params.milestone;
-    if (params?.assignee_username)
-      queryParams["assignee_username"] = params.assignee_username;
-    if (params?.order_by) queryParams["order_by"] = params.order_by;
-    if (params?.sort) queryParams["sort"] = params.sort;
-
-    return this.paginate<GitLabIssue>(
-      `/groups/${encodeURIComponent(groupId)}/issues`,
-      queryParams,
+    return this.graphqlPaginate(
+      Q_GROUP_ISSUES,
+      {
+        fullPath: groupId,
+        state: params?.state && params.state !== "all" ? params.state : null,
+        search: params?.search ?? null,
+        labelName: params?.labels ? params.labels.split(",").map(s => s.trim()) : null,
+        milestoneTitle: params?.milestone ? [params.milestone] : null,
+        assigneeUsernames: params?.assignee_username ? [params.assignee_username] : null,
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (d: any) => d.group?.issues,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (n: any) => mapIssue(n, this.baseUrl),
     );
   }
 
   async getIssue(projectId: number, issueIid: number): Promise<GitLabIssue> {
-    return this.request<GitLabIssue>(
-      "GET",
-      `/projects/${projectId}/issues/${issueIid}`,
-    );
+    const projectPath = await this.resolveProjectPath(projectId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await this.graphql<any>(Q_ISSUE, { projectPath, iid: String(issueIid) });
+    if (!data.project?.issue) throw new Error(`Issue #${issueIid} not found in project ${projectId}`);
+    return mapIssue(data.project.issue, this.baseUrl);
   }
 
   async createIssue(
@@ -328,11 +363,23 @@ export class GitLabClient {
       iteration_id?: number;
     },
   ): Promise<GitLabIssue> {
-    return this.request<GitLabIssue>(
-      "POST",
-      `/projects/${projectId}/issues`,
-      data,
-    );
+    const projectPath = await this.resolveProjectPath(projectId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const input: any = {
+      projectPath,
+      title: data.title,
+    };
+    if (data.description) input.description = data.description;
+    if (data.labels) input.labels = data.labels.split(",").map(s => s.trim());
+    if (data.milestone_id) input.milestoneId = toGid("Milestone", data.milestone_id);
+    if (data.assignee_ids) input.assigneeIds = data.assignee_ids.map(id => toGid("User", id));
+    if (data.due_date) input.dueDate = data.due_date;
+    if (data.weight != null) input.weight = data.weight;
+    if (data.epic_id) input.epicId = toGid("Epic", data.epic_id);
+    if (data.iteration_id) input.iterationId = toGid("Iteration", data.iteration_id);
+
+    const result = await this.mutate(M_CREATE_ISSUE, input, "createIssue");
+    return mapIssue(result.issue, this.baseUrl);
   }
 
   async updateIssue(
@@ -350,35 +397,51 @@ export class GitLabClient {
       iteration_id?: number;
     },
   ): Promise<GitLabIssue> {
-    return this.request<GitLabIssue>(
-      "PUT",
-      `/projects/${projectId}/issues/${issueIid}`,
-      data,
-    );
+    const projectPath = await this.resolveProjectPath(projectId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const input: any = {
+      projectPath,
+      iid: String(issueIid),
+    };
+    if (data.title) input.title = data.title;
+    if (data.description) input.description = data.description;
+    if (data.labels) input.labels = data.labels.split(",").map(s => s.trim());
+    if (data.milestone_id) input.milestoneId = toGid("Milestone", data.milestone_id);
+    if (data.assignee_ids) input.assigneeIds = data.assignee_ids.map(id => toGid("User", id));
+    if (data.due_date) input.dueDate = data.due_date;
+    if (data.weight != null) input.weight = data.weight;
+    if (data.state_event === "close") input.stateEvent = "CLOSE";
+    if (data.iteration_id) input.iterationId = toGid("Iteration", data.iteration_id);
+
+    const result = await this.mutate(M_UPDATE_ISSUE, input, "updateIssue");
+    return mapIssue(result.issue, this.baseUrl);
   }
 
-  async closeIssue(
-    projectId: number,
-    issueIid: number,
-  ): Promise<GitLabIssue> {
+  async closeIssue(projectId: number, issueIid: number): Promise<GitLabIssue> {
     return this.updateIssue(projectId, issueIid, { state_event: "close" });
   }
 
   async listIssueNotes(projectId: number, issueIid: number): Promise<GitLabNote[]> {
-    return this.paginate<GitLabNote>(
-      `/projects/${projectId}/issues/${issueIid}/notes`,
+    const projectPath = await this.resolveProjectPath(projectId);
+    return this.graphqlPaginate(
+      Q_ISSUE_NOTES,
+      { projectPath, issueIid: String(issueIid) },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (d: any) => d.project?.issue?.notes,
+      mapNote,
     );
   }
 
   async addIssueNote(projectId: number, issueIid: number, body: string): Promise<GitLabNote> {
-    return this.request<GitLabNote>(
-      "POST",
-      `/projects/${projectId}/issues/${issueIid}/notes`,
-      { body },
-    );
+    const issue = await this.getIssue(projectId, issueIid);
+    const noteableId = toGid("Issue", issue.id);
+    const result = await this.mutate(M_CREATE_NOTE, { noteableId, body }, "createNote");
+    return mapNote(result.note);
   }
 
-  // --- Merge Requests ---
+  // ---------------------------------------------------------------------------
+  // Merge Requests
+  // ---------------------------------------------------------------------------
 
   async listGroupMergeRequests(groupId: string, params?: {
     state?: string;
@@ -390,50 +453,62 @@ export class GitLabClient {
     order_by?: string;
     sort?: string;
   }): Promise<GitLabMergeRequest[]> {
-    const queryParams: Record<string, string> = {};
-    if (params?.state) queryParams["state"] = params.state;
-    if (params?.search) queryParams["search"] = params.search;
-    if (params?.labels) queryParams["labels"] = params.labels;
-    if (params?.milestone) queryParams["milestone"] = params.milestone;
-    if (params?.author_username) queryParams["author_username"] = params.author_username;
-    if (params?.reviewer_username) queryParams["reviewer_username"] = params.reviewer_username;
-    if (params?.order_by) queryParams["order_by"] = params.order_by;
-    if (params?.sort) queryParams["sort"] = params.sort;
-
-    return this.paginate<GitLabMergeRequest>(
-      `/groups/${encodeURIComponent(groupId)}/merge_requests`,
-      queryParams,
+    return this.graphqlPaginate(
+      Q_MERGE_REQUESTS,
+      {
+        fullPath: groupId,
+        state: params?.state && params.state !== "all" ? params.state : null,
+        labels: params?.labels ? params.labels.split(",").map(s => s.trim()) : null,
+        milestoneTitle: params?.milestone ?? null,
+        authorUsername: params?.author_username ?? null,
+        reviewerUsername: params?.reviewer_username ?? null,
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (d: any) => d.group?.mergeRequests,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (n: any) => mapMergeRequest(n, this.baseUrl),
     );
   }
 
   async getMergeRequest(projectId: number, mrIid: number): Promise<GitLabMergeRequest> {
-    return this.request<GitLabMergeRequest>(
-      "GET",
-      `/projects/${projectId}/merge_requests/${mrIid}`,
-    );
+    const projectPath = await this.resolveProjectPath(projectId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await this.graphql<any>(Q_MERGE_REQUEST, { projectPath, iid: String(mrIid) });
+    if (!data.project?.mergeRequest) throw new Error(`MR !${mrIid} not found in project ${projectId}`);
+    return mapMergeRequest(data.project.mergeRequest, this.baseUrl);
   }
 
-  // --- Milestones ---
+  // ---------------------------------------------------------------------------
+  // Milestones
+  // ---------------------------------------------------------------------------
 
   async listGroupMilestones(groupId: string, params?: {
     state?: string;
     search?: string;
   }): Promise<GitLabMilestone[]> {
-    const queryParams: Record<string, string> = {};
-    if (params?.state) queryParams["state"] = params.state;
-    if (params?.search) queryParams["search"] = params.search;
-
-    return this.paginate<GitLabMilestone>(
-      `/groups/${encodeURIComponent(groupId)}/milestones`,
-      queryParams,
+    return this.graphqlPaginate(
+      Q_MILESTONES,
+      {
+        fullPath: groupId,
+        state: params?.state ?? null,
+        searchTitle: params?.search ?? null,
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (d: any) => d.group?.milestones,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (n: any) => mapMilestone(n, this.baseUrl),
     );
   }
 
   async getMilestone(groupId: string, milestoneId: number): Promise<GitLabMilestone> {
-    return this.request<GitLabMilestone>(
-      "GET",
-      `/groups/${encodeURIComponent(groupId)}/milestones/${milestoneId}`,
-    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await this.graphql<any>(Q_MILESTONE, {
+      fullPath: groupId,
+      ids: [toGid("Milestone", milestoneId)],
+    });
+    const node = data.group?.milestones?.nodes?.[0];
+    if (!node) throw new Error(`Milestone ${milestoneId} not found in group ${groupId}`);
+    return mapMilestone(node, this.baseUrl);
   }
 
   async createMilestone(groupId: string, data: {
@@ -442,11 +517,17 @@ export class GitLabClient {
     start_date?: string;
     due_date?: string;
   }): Promise<GitLabMilestone> {
-    return this.request<GitLabMilestone>(
-      "POST",
-      `/groups/${encodeURIComponent(groupId)}/milestones`,
-      data,
-    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const input: any = {
+      groupPath: groupId,
+      title: data.title,
+    };
+    if (data.description) input.description = data.description;
+    if (data.start_date) input.startDate = data.start_date;
+    if (data.due_date) input.dueDate = data.due_date;
+
+    const result = await this.mutate(M_CREATE_MILESTONE, input, "createMilestone");
+    return mapMilestone(result.milestone, this.baseUrl);
   }
 
   async updateMilestone(
@@ -460,80 +541,104 @@ export class GitLabClient {
       state_event?: string;
     },
   ): Promise<GitLabMilestone> {
-    return this.request<GitLabMilestone>(
-      "PUT",
-      `/groups/${encodeURIComponent(groupId)}/milestones/${milestoneId}`,
-      data,
-    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const input: any = {
+      id: toGid("Milestone", milestoneId),
+    };
+    if (data.title) input.title = data.title;
+    if (data.description) input.description = data.description;
+    if (data.start_date) input.startDate = data.start_date;
+    if (data.due_date) input.dueDate = data.due_date;
+    if (data.state_event === "close") input.stateEvent = "CLOSE";
+
+    const result = await this.mutate(M_UPDATE_MILESTONE, input, "updateMilestone");
+    return mapMilestone(result.milestone, this.baseUrl);
   }
 
   async closeMilestone(groupId: string, milestoneId: number): Promise<GitLabMilestone> {
     return this.updateMilestone(groupId, milestoneId, { state_event: "close" });
   }
 
-  // --- Iterations ---
+  // ---------------------------------------------------------------------------
+  // Iterations
+  // ---------------------------------------------------------------------------
 
   async listGroupIterations(groupId: string, params?: {
     state?: string;
     search?: string;
   }): Promise<GitLabIteration[]> {
-    const queryParams: Record<string, string> = {};
-    if (params?.state) queryParams["state"] = params.state;
-    if (params?.search) queryParams["search"] = params.search;
-
-    return this.paginate<GitLabIteration>(
-      `/groups/${encodeURIComponent(groupId)}/iterations`,
-      queryParams,
+    return this.graphqlPaginate(
+      Q_ITERATIONS,
+      {
+        fullPath: groupId,
+        state: params?.state ?? null,
+        search: params?.search ?? null,
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (d: any) => d.group?.iterations,
+      mapIteration,
     );
   }
 
-  // --- Utils ---
+  // ---------------------------------------------------------------------------
+  // Utils
+  // ---------------------------------------------------------------------------
 
   async listProjects(groupId: string, params?: {
     search?: string;
     archived?: string;
   }): Promise<GitLabProject[]> {
-    const queryParams: Record<string, string> = {};
-    if (params?.search) queryParams["search"] = params.search;
-    if (params?.archived) queryParams["archived"] = params.archived;
-
-    return this.paginate<GitLabProject>(
-      `/groups/${encodeURIComponent(groupId)}/projects`,
-      queryParams,
+    return this.graphqlPaginate(
+      Q_PROJECTS,
+      {
+        fullPath: groupId,
+        search: params?.search ?? null,
+        includeSubgroups: true,
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (d: any) => d.group?.projects,
+      mapProject,
     );
   }
 
   async listGroupMembers(groupId: string, params?: {
     search?: string;
   }): Promise<GitLabMember[]> {
-    const queryParams: Record<string, string> = {};
-    if (params?.search) queryParams["search"] = params.search;
-
-    return this.paginate<GitLabMember>(
-      `/groups/${encodeURIComponent(groupId)}/members`,
-      queryParams,
+    return this.graphqlPaginate(
+      Q_MEMBERS,
+      { fullPath: groupId, search: params?.search ?? null },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (d: any) => d.group?.groupMembers,
+      mapMember,
     );
   }
 
   async listGroupLabels(groupId: string, params?: {
     search?: string;
   }): Promise<GitLabLabel[]> {
-    const queryParams: Record<string, string> = {};
-    if (params?.search) queryParams["search"] = params.search;
-
-    return this.paginate<GitLabLabel>(
-      `/groups/${encodeURIComponent(groupId)}/labels`,
-      queryParams,
+    return this.graphqlPaginate(
+      Q_LABELS,
+      { fullPath: groupId, searchTerm: params?.search ?? null },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (d: any) => d.group?.labels,
+      mapLabel,
     );
   }
 
   async listGroupBoards(groupId: string): Promise<GitLabBoard[]> {
-    return this.paginate<GitLabBoard>(
-      `/groups/${encodeURIComponent(groupId)}/boards`,
+    return this.graphqlPaginate(
+      Q_BOARDS,
+      { fullPath: groupId },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (d: any) => d.group?.boards,
+      mapBoard,
     );
   }
 
   async getCurrentUser(): Promise<GitLabUser> {
-    return this.request<GitLabUser>("GET", "/user");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await this.graphql<any>(Q_CURRENT_USER);
+    if (!data.currentUser) throw new Error("Authentification echouee. Verifiez votre GITLAB_TOKEN.");
+    return mapUser(data.currentUser);
   }
 }
