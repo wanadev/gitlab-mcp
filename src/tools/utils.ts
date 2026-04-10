@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
-import type { GitLabProject, GitLabMember, GitLabUser, GitLabGroup } from "../types.js";
+import type { GitLabProject, GitLabMember, GitLabUser, GitLabGroup, GitLabLabel, GitLabBoard } from "../types.js";
 
 const groupIdSchema = z.string().describe("ID ou chemin URL du groupe GitLab (ex: '42' ou 'wanadev/kp1'). Si vous n'avez que le nom, appelez d'abord list_groups pour trouver le chemin exact.");
 
@@ -48,6 +48,30 @@ function formatGroup(g: GitLabGroup): string {
 function formatGroups(groups: GitLabGroup[]): string {
   if (groups.length === 0) return "Aucun groupe trouve.";
   return `${groups.length} groupe(s) :\n\n${groups.map(formatGroup).join("\n\n")}`;
+}
+
+function formatLabel(l: GitLabLabel): string {
+  const prio = l.priority != null ? ` — Priorite: ${l.priority}` : "";
+  const desc = l.description ? ` — ${l.description}` : "";
+  return `**${l.name}** (${l.color}) — ${l.open_issues_count} issues ouvertes, ${l.closed_issues_count} fermees, ${l.open_merge_requests_count} MRs${prio}${desc}`;
+}
+
+function formatLabels(labels: GitLabLabel[]): string {
+  if (labels.length === 0) return "Aucun label trouve.";
+  return `${labels.length} label(s) :\n\n${labels.map(formatLabel).join("\n\n")}`;
+}
+
+function formatBoard(b: GitLabBoard): string {
+  const milestone = b.milestone ? ` — Milestone: ${b.milestone.title}` : "";
+  const lists = b.lists.map((l) =>
+    l.label ? `  - ${l.label.name} (position: ${l.position})` : `  - (position: ${l.position})`
+  ).join("\n");
+  return `**${b.name}** (id:${b.id})${milestone}\n${lists || "  (aucune colonne)"}`;
+}
+
+function formatBoards(boards: GitLabBoard[]): string {
+  if (boards.length === 0) return "Aucun board trouve.";
+  return `${boards.length} board(s) :\n\n${boards.map(formatBoard).join("\n\n")}`;
 }
 
 export function registerUtilTools(server: McpServer, client: GitLabClient): void {
@@ -105,6 +129,44 @@ export function registerUtilTools(server: McpServer, client: GitLabClient): void
       const { group_id, ...params } = args;
       const members = await client.listGroupMembers(group_id, params);
       return { content: [{ type: "text" as const, text: formatMembers(members) }] };
+    } catch (error) {
+      return {
+        content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }],
+        isError: true,
+      };
+    }
+  });
+
+  server.registerTool("list_labels", {
+    description: "Lister les labels d'un groupe GitLab avec le nombre d'issues et MRs associees.",
+    inputSchema: {
+      group_id: groupIdSchema,
+      search: z.string().optional().describe("Recherche textuelle dans le nom du label"),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const { group_id, ...params } = args;
+      const labels = await client.listGroupLabels(group_id, params);
+      return { content: [{ type: "text" as const, text: formatLabels(labels) }] };
+    } catch (error) {
+      return {
+        content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }],
+        isError: true,
+      };
+    }
+  });
+
+  server.registerTool("list_boards", {
+    description: "Lister les boards (tableaux kanban) d'un groupe GitLab avec leurs colonnes.",
+    inputSchema: {
+      group_id: groupIdSchema,
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const boards = await client.listGroupBoards(args.group_id);
+      return { content: [{ type: "text" as const, text: formatBoards(boards) }] };
     } catch (error) {
       return {
         content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }],
