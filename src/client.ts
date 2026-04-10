@@ -11,6 +11,7 @@ import type {
   GitLabLabel,
   GitLabNote,
   GitLabBoard,
+  GitLabIteration,
 } from "./types.js";
 
 export class GitLabClient {
@@ -324,6 +325,7 @@ export class GitLabClient {
       due_date?: string;
       weight?: number;
       epic_id?: number;
+      iteration_id?: number;
     },
   ): Promise<GitLabIssue> {
     return this.request<GitLabIssue>(
@@ -345,6 +347,7 @@ export class GitLabClient {
       due_date?: string;
       weight?: number;
       state_event?: string;
+      iteration_id?: number;
     },
   ): Promise<GitLabIssue> {
     return this.request<GitLabIssue>(
@@ -466,6 +469,22 @@ export class GitLabClient {
 
   async closeMilestone(groupId: string, milestoneId: number): Promise<GitLabMilestone> {
     return this.updateMilestone(groupId, milestoneId, { state_event: "close" });
+  }
+
+  // --- Iterations ---
+
+  async listGroupIterations(groupId: string, params?: {
+    state?: string;
+    search?: string;
+  }): Promise<GitLabIteration[]> {
+    const queryParams: Record<string, string> = {};
+    if (params?.state) queryParams["state"] = params.state;
+    if (params?.search) queryParams["search"] = params.search;
+
+    return this.paginate<GitLabIteration>(
+      `/groups/${encodeURIComponent(groupId)}/iterations`,
+      queryParams,
+    );
   }
 
   // --- Utils ---

@@ -76,6 +76,20 @@ export interface GitLabMilestone {
   expired: boolean;
 }
 
+export interface GitLabIteration {
+  id: number;
+  iid: number;
+  group_id: number;
+  title: string;
+  description: string | null;
+  state: "upcoming" | "current" | "closed";
+  web_url: string;
+  start_date: string;
+  due_date: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface GitLabUser {
   id: number;
   username: string;
