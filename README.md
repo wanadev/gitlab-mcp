@@ -1,6 +1,6 @@
 # @wanadev/mcp-gitlab
 
-A Model Context Protocol (MCP) server that gives project managers full control over GitLab **epics**, **issues**, **milestones**, **merge requests**, **labels**, and **boards** from Claude Desktop or any MCP-compatible client.
+A Model Context Protocol (MCP) server that gives project managers full control over GitLab **epics**, **issues**, **milestones**, **iterations**, **merge requests**, **labels**, and **boards** from Claude Desktop, Claude Code, or any MCP-compatible client.
 
 ## Why this MCP server?
 
@@ -8,7 +8,7 @@ Existing tools like **glab** are developer-oriented: they focus on merge request
 
 `@wanadev/mcp-gitlab` fills that gap:
 
-- **Epics & milestones** -- create, update, close, and link issues to epics.
+- **Epics, milestones & iterations** -- create, update, close, and link issues to epics. Track sprints with iterations.
 - **Cross-group visibility** -- query multiple GitLab groups in the same conversation (no hardcoded group ID).
 - **Time tracking** -- see estimated vs. spent time on issues at a glance.
 - **Labels & boards** -- list labels and issue boards without leaving your chat.
@@ -22,7 +22,7 @@ Existing tools like **glab** are developer-oriented: they focus on merge request
 
 - **Node.js >= 20**
 - A GitLab **Personal Access Token** (PAT) with the `api` scope (or `read_api` for read-only access)
-- **GitLab Premium/Ultimate** for epics (issues, milestones, MRs, and utilities work with all editions)
+- **GitLab Premium/Ultimate** for epics and iterations (issues, milestones, MRs, labels, and boards work with all editions)
 
 ### 1. Generate a GitLab token
 
@@ -37,7 +37,6 @@ Existing tools like **glab** are developer-oriented: they focus on merge request
 ```
 /plugin marketplace add wanadev/gitlab-mcp
 /plugin install wanadev-gitlab@wanadev-gitlab
-```
 
 Set `GITLAB_TOKEN` in your environment (`.bashrc`, `.zshrc`, or system variable). The plugin will guide you on first launch if it's missing.
 
@@ -64,7 +63,7 @@ Add the following to your `claude_desktop_config.json`:
 }
 ```
 
-### 3. Restart Claude Desktop
+### 3. Restart and test
 
 The MCP server will be available immediately. Test with: *"List my GitLab groups"*
 
