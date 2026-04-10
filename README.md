@@ -30,7 +30,18 @@ Existing tools like **glab** are developer-oriented: they focus on merge request
 2. Create a token with the `api` scope
 3. Copy the token
 
-### 2. Configure Claude Desktop
+### 2. Install
+
+#### Claude Code (plugin)
+
+```
+/plugin marketplace add wanadev/gitlab-mcp
+/plugin install wanadev-gitlab@wanadev-gitlab
+```
+
+Set `GITLAB_TOKEN` in your environment (`.bashrc`, `.zshrc`, or system variable). The plugin will guide you on first launch if it's missing.
+
+#### Claude Desktop (manual config)
 
 Add the following to your `claude_desktop_config.json`:
 
