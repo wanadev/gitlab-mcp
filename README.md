@@ -28,7 +28,7 @@ Ajouter dans votre fichier `claude_desktop_config.json` :
   "mcpServers": {
     "gitlab": {
       "command": "npx",
-      "args": ["-y", "https://github.com/wanadev/gitlab-mcp/releases/download/v1.0.0/wanadev-mcp-gitlab-1.0.0.tgz"],
+      "args": ["-y", "@wanadev/mcp-gitlab"],
       "env": {
         "GITLAB_TOKEN": "glpat-xxxxxxxxxxxxxxxxxxxx",
         "GITLAB_BASE_URL": "https://gitlab.com",
@@ -38,8 +38,6 @@ Ajouter dans votre fichier `claude_desktop_config.json` :
   }
 }
 ```
-
-> Remplacer `v1.0.0` par la [derniere release](https://github.com/wanadev/gitlab-mcp/releases).
 
 ### 3. Redemarrer Claude Desktop
 
