@@ -6,21 +6,19 @@
   "bin": {
     "mcp-gitlab": "./dist/index.js"
   },
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
+  "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "default": "./dist/index.js"
     }
   },
   "scripts": {
-    "build": "tsup",
-    "prepack": "tsup",
-    "dev": "tsup --watch",
-    "typecheck": "tsc --noEmit"
+    "build": "tsc",
+    "prepack": "tsc",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsc --watch"
   },
   "keywords": [
     "mcp",
@@ -37,7 +35,6 @@
   },
   "devDependencies": {
     "@types/node": "^22.15.3",
-    "tsup": "^8.4.0",
     "typescript": "^5.8.3"
   },
   "engines": {

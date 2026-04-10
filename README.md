@@ -118,9 +118,10 @@ Cela evite toute modification accidentelle : le LLM montre d'abord ce qu'il va f
 ## Developpement
 
 ```bash
-cd packages/mcp-gitlab
+git clone https://github.com/wanadev/gitlab-mcp.git
+cd gitlab-mcp
 npm install
-npm run build       # Build ESM + CJS
+npm run build       # Build ESM (tsc)
 npm run typecheck   # Verification TypeScript
 npm run dev         # Build en mode watch
 ```

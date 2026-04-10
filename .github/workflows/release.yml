@@ -17,16 +17,14 @@ jobs:
           node-version: 20
 
       - name: Install & build
-        working-directory: packages/mcp-gitlab
         run: |
           npm ci
           npm run build
 
       - name: Pack
-        working-directory: packages/mcp-gitlab
         run: npm pack
 
       - name: Upload .tgz to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.release.tag_name }}" packages/mcp-gitlab/*.tgz
+        run: gh release upload "${{ github.event.release.tag_name }}" *.tgz
