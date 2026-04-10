@@ -8,7 +8,7 @@ Existing tools like **glab** are developer-oriented: they focus on merge request
 
 `@wanadev/mcp-gitlab` fills that gap:
 
-- **Epics, milestones & iterations** -- create, update, close, and link issues to epics. Track sprints with iterations.
+- **Epics, milestones & iterations** -- create, update, close, and link issues to epics. Track sprints with iterations. Set health status (on track / needs attention / at risk) and view progress via Work Items API.
 - **Cross-group visibility** -- query multiple GitLab groups in the same conversation (no hardcoded group ID).
 - **Time tracking** -- see estimated vs. spent time on issues at a glance.
 - **Labels & boards** -- list labels and issue boards without leaving your chat.
@@ -80,7 +80,7 @@ The MCP server will be available immediately. Test with: *"List my GitLab groups
 
 ## Dry-run safety
 
-All write tools (`create_*`, `update_*`, `close_*`, `add_issue_to_epic`, `add_issue_note`, `add_epic_note`) include a `dry_run` parameter that defaults to **`true`**.
+All write tools (`create_*`, `update_*`, `close_*`, `set_*`, `add_*`) include a `dry_run` parameter that defaults to **`true`**.
 
 | Mode | Behavior |
 |------|----------|
@@ -89,7 +89,7 @@ All write tools (`create_*`, `update_*`, `close_*`, `add_issue_to_epic`, `add_is
 
 This prevents accidental changes: the LLM always shows what it intends to do first and only proceeds after your approval.
 
-## All 30 tools
+## All 36 tools
 
 ### Epics (9 tools -- requires GitLab Premium/Ultimate)
 
@@ -98,12 +98,23 @@ This prevents accidental changes: the LLM always shows what it intends to do fir
 | `list_epics` | List epics (filter by state, search, labels) | group | -- |
 | `get_epic` | Get epic details by number | group | -- |
 | `create_epic` | Create an epic | group | dry_run |
-| `update_epic` | Update an epic | group | dry_run |
+| `update_epic` | Update an epic (title, description, labels, dates) | group | dry_run |
 | `close_epic` | Close an epic | group | dry_run |
 | `list_epic_issues` | List issues linked to an epic | group | -- |
 | `add_issue_to_epic` | Link an issue to an epic | group | dry_run |
 | `list_epic_notes` | List comments on an epic | group | -- |
 | `add_epic_note` | Add a comment to an epic | group | dry_run |
+
+### Work Items (6 tools -- requires GitLab Premium/Ultimate)
+
+| Tool | Description | Scope | Write |
+|------|-------------|:-----:|:-----:|
+| `get_epic_widgets` | Get epic widgets: health status, progress, milestone, iteration, linked items | group | -- |
+| `set_epic_milestone` | Associate a milestone with an epic | group | dry_run |
+| `set_epic_health_status` | Set health status on an epic (onTrack / needsAttention / atRisk) | group | dry_run |
+| `set_issue_health_status` | Set health status on an issue (onTrack / needsAttention / atRisk) | project | dry_run |
+| `set_epic_iteration` | Associate an iteration (sprint) with an epic | group | dry_run |
+| `add_linked_item` | Link work items (RELATED / BLOCKS / BLOCKED_BY) | group/project | dry_run |
 
 ### Issues (7 tools)
 
@@ -155,6 +166,9 @@ This prevents accidental changes: the LLM always shows what it intends to do fir
 
 - *"List my GitLab groups"*
 - *"Show open epics in group 42"*
+- *"What's the health status and progress of epic #5?"*
+- *"Set epic #12 health status to 'needs attention'"*
+- *"Link epic #3 as blocking issue #45"*
 - *"List issues labeled `bug` in the wanadev group"*
 - *"Create an epic called 'Homepage Redesign' in group 42 with a deadline of April 30"*
 - *"Which issues are linked to epic #5 in the wanadev group?"*
