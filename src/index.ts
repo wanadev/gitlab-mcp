@@ -1,6 +1,12 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(resolve(__dirname, "..", "package.json"), "utf8")) as { name: string; version: string };
 import { GitLabClient } from "./client.js";
 import { registerEpicTools } from "./tools/epics.js";
 import { registerIssueTools } from "./tools/issues.js";
@@ -33,8 +39,8 @@ async function main(): Promise<void> {
   const client = new GitLabClient({ baseUrl, token, readOnly });
 
   const server = new McpServer({
-    name: "@wanadev/mcp-gitlab",
-    version: "1.0.3",
+    name: pkg.name,
+    version: pkg.version,
   });
 
   registerEpicTools(server, client);
