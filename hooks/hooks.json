@@ -1,0 +1,13 @@
+{
+  "SessionStart": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "prompt",
+          "prompt": "Check if the GITLAB_TOKEN environment variable is set. If it is NOT set or empty, proactively tell the user (in their language) that the GitLab MCP plugin needs a Personal Access Token to work. Guide them step by step: 1) Go to GitLab > Settings > Access Tokens, 2) Create a token with the 'api' scope, 3) Set it as GITLAB_TOKEN environment variable. Be friendly and concise. If GITLAB_TOKEN IS set, say nothing — do not mention it at all."
+        }
+      ]
+    }
+  ]
+}
