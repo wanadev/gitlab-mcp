@@ -48,8 +48,43 @@ async function main(): Promise<void> {
       return { content: [{ type: "text" as const, text: SETUP_MESSAGE }] };
     });
   } else {
-    // Token present: register all tools
+    // Validate base URL
+    try {
+      new URL(baseUrl);
+    } catch {
+      console.error(`@wanadev/mcp-gitlab: invalid GITLAB_BASE_URL "${baseUrl}"`);
+      server.registerTool("gitlab_setup", {
+        description: "GitLab MCP has an invalid GITLAB_BASE_URL. Call this tool to help the user fix it.",
+        inputSchema: {},
+        annotations: { readOnlyHint: true },
+      }, async () => {
+        return { content: [{ type: "text" as const, text: `GITLAB_BASE_URL is invalid: "${baseUrl}". It must be a valid URL (e.g. https://gitlab.com or https://gitlab.mycompany.com). Tell the user to fix it in their language and restart.` }] };
+      });
+
+      const transport = new StdioServerTransport();
+      await server.connect(transport);
+      return;
+    }
+
+    // Token + URL present: validate connection then register tools
     const client = new GitLabClient({ baseUrl, token, readOnly });
+
+    // Test the connection at startup and detect access level
+    try {
+      const user = await client.getCurrentUser();
+      const mode = readOnly ? "read-only (forced by GITLAB_READ_ONLY=true)" : "read-write";
+      console.error(`@wanadev/mcp-gitlab: connected as @${user.username} on ${baseUrl} [${mode}]`);
+    } catch (error) {
+      const msg = (error as Error).message;
+      if (msg.includes("401")) {
+        console.error("@wanadev/mcp-gitlab: GITLAB_TOKEN is invalid or expired. Tools will register but all calls will fail.");
+      } else if (msg.includes("403")) {
+        console.error("@wanadev/mcp-gitlab: GITLAB_TOKEN has insufficient permissions. Make sure it has the 'api' scope.");
+      } else {
+        console.error(`@wanadev/mcp-gitlab: connection check failed — ${msg}`);
+        console.error("Tools will still register but API calls may fail. Check your GITLAB_TOKEN and GITLAB_BASE_URL.");
+      }
+    }
 
     registerEpicTools(server, client);
     registerIssueTools(server, client);
