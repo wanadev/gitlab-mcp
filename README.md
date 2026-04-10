@@ -169,6 +169,16 @@ Claude calls `list_merge_requests` (state: opened) → `list_issues` (state: clo
 
 Claude chains `get_epic` → `list_epic_issues` → reads `time_stats` from each issue → `list_epic_notes` → returns a structured progress report.
 
+| Tool | Description | `group_id` requis | dry_run |
+|------|-------------|:---:|:---:|
+| `list_epics` | Lister les epics (filtre par etat, recherche, labels) | Oui | — |
+| `get_epic` | Details d'un epic par numero | Oui | — |
+| `create_epic` | Creer un epic (avec milestone_id optionnel) | Oui | Oui |
+| `update_epic` | Modifier un epic (dont milestone_id) | Oui | Oui |
+| `close_epic` | Fermer un epic | Oui | Oui |
+| `list_epic_issues` | Issues rattachees a un epic | Oui | — |
+| `add_issue_to_epic` | Rattacher une issue a un epic | Oui | Oui |
+
 ### Cross-group dashboard
 
 > *"Compare the open issue count across my three groups: wanadev, kp1, and infra. Which group has the most overdue issues?"*
