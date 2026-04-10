@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "gitlab": {
+      "command": "npx",
+      "args": ["-y", "@wanadev/mcp-gitlab"],
+      "env": {
+        "GITLAB_TOKEN": "${GITLAB_TOKEN}",
+        "GITLAB_BASE_URL": "${GITLAB_BASE_URL}",
+        "GITLAB_READ_ONLY": "${GITLAB_READ_ONLY}"
+      }
+    }
+  }
+}
