@@ -28,7 +28,7 @@ Ajouter dans votre fichier `claude_desktop_config.json` :
   "mcpServers": {
     "gitlab": {
       "command": "npx",
-      "args": ["-y", "@wanadev/mcp-gitlab"],
+      "args": ["-y", "https://github.com/wanadev/gitlab-mcp/releases/download/v1.0.0/wanadev-mcp-gitlab-1.0.0.tgz"],
       "env": {
         "GITLAB_TOKEN": "glpat-xxxxxxxxxxxxxxxxxxxx",
         "GITLAB_BASE_URL": "https://gitlab.com",
@@ -38,6 +38,8 @@ Ajouter dans votre fichier `claude_desktop_config.json` :
   }
 }
 ```
+
+> Remplacer `v1.0.0` par la [derniere release](https://github.com/wanadev/gitlab-mcp/releases).
 
 ### 3. Redemarrer Claude Desktop
 
@@ -53,46 +55,55 @@ Le serveur MCP sera disponible immediatement. Testez avec : *"Liste mes groupes 
 
 > **Note :** Le `group_id` n'est plus une variable d'environnement. Chaque tool group-scoped prend un parametre `group_id` requis. Utilisez `list_groups` pour decouvrir les groupes accessibles.
 
+## Mode dry-run (confirmation avant ecriture)
+
+Tous les tools d'ecriture (`create_*`, `update_*`, `close_*`, `add_issue_to_epic`) ont un parametre `dry_run` qui vaut **`true` par defaut**.
+
+- **`dry_run: true`** (defaut) — retourne un resume de l'action prevue sans rien executer sur GitLab.
+- **`dry_run: false`** — execute reellement l'action apres confirmation de l'utilisateur.
+
+Cela evite toute modification accidentelle : le LLM montre d'abord ce qu'il va faire, et n'execute qu'apres votre accord.
+
 ## Les 19 tools disponibles
 
 ### Epics (necessite GitLab Premium/Ultimate)
 
-| Tool | Description | `group_id` requis |
-|------|-------------|:---:|
-| `list_epics` | Lister les epics (filtre par etat, recherche, labels) | Oui |
-| `get_epic` | Details d'un epic par numero | Oui |
-| `create_epic` | Creer un epic | Oui |
-| `update_epic` | Modifier un epic | Oui |
-| `close_epic` | Fermer un epic | Oui |
-| `list_epic_issues` | Issues rattachees a un epic | Oui |
-| `add_issue_to_epic` | Rattacher une issue a un epic | Oui |
+| Tool | Description | `group_id` requis | dry_run |
+|------|-------------|:---:|:---:|
+| `list_epics` | Lister les epics (filtre par etat, recherche, labels) | Oui | — |
+| `get_epic` | Details d'un epic par numero | Oui | — |
+| `create_epic` | Creer un epic | Oui | Oui |
+| `update_epic` | Modifier un epic | Oui | Oui |
+| `close_epic` | Fermer un epic | Oui | Oui |
+| `list_epic_issues` | Issues rattachees a un epic | Oui | — |
+| `add_issue_to_epic` | Rattacher une issue a un epic | Oui | Oui |
 
 ### Issues
 
-| Tool | Description | `group_id` requis |
-|------|-------------|:---:|
-| `list_issues` | Lister les issues d'un groupe | Oui |
-| `get_issue` | Details d'une issue (project-scoped) | Non |
-| `create_issue` | Creer une issue (project-scoped) | Non |
-| `update_issue` | Modifier une issue (project-scoped) | Non |
-| `close_issue` | Fermer une issue (project-scoped) | Non |
+| Tool | Description | `group_id` requis | dry_run |
+|------|-------------|:---:|:---:|
+| `list_issues` | Lister les issues d'un groupe | Oui | — |
+| `get_issue` | Details d'une issue (project-scoped) | Non | — |
+| `create_issue` | Creer une issue (project-scoped) | Non | Oui |
+| `update_issue` | Modifier une issue (project-scoped) | Non | Oui |
+| `close_issue` | Fermer une issue (project-scoped) | Non | Oui |
 
 ### Milestones
 
-| Tool | Description | `group_id` requis |
-|------|-------------|:---:|
-| `list_milestones` | Lister les milestones d'un groupe | Oui |
-| `get_milestone` | Details d'un milestone | Oui |
-| `create_milestone` | Creer un milestone | Oui |
+| Tool | Description | `group_id` requis | dry_run |
+|------|-------------|:---:|:---:|
+| `list_milestones` | Lister les milestones d'un groupe | Oui | — |
+| `get_milestone` | Details d'un milestone | Oui | — |
+| `create_milestone` | Creer un milestone | Oui | Oui |
 
 ### Utilitaires
 
-| Tool | Description | `group_id` requis |
-|------|-------------|:---:|
-| `list_groups` | Decouvrir les groupes accessibles | Non |
-| `list_projects` | Lister les projets d'un groupe | Oui |
-| `list_group_members` | Lister les membres d'un groupe | Oui |
-| `get_current_user` | Verifier la connexion (info utilisateur) | Non |
+| Tool | Description | `group_id` requis | dry_run |
+|------|-------------|:---:|:---:|
+| `list_groups` | Decouvrir les groupes accessibles | Non | — |
+| `list_projects` | Lister les projets d'un groupe | Oui | — |
+| `list_group_members` | Lister les membres d'un groupe | Oui | — |
+| `get_current_user` | Verifier la connexion (info utilisateur) | Non | — |
 
 ## Exemples de prompts
 
@@ -107,9 +118,10 @@ Le serveur MCP sera disponible immediatement. Testez avec : *"Liste mes groupes 
 ## Developpement
 
 ```bash
-cd packages/mcp-gitlab
+git clone https://github.com/wanadev/gitlab-mcp.git
+cd gitlab-mcp
 npm install
-npm run build       # Build ESM + CJS
+npm run build       # Build ESM (tsc)
 npm run typecheck   # Verification TypeScript
 npm run dev         # Build en mode watch
 ```

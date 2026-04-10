@@ -3,7 +3,16 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
 import type { GitLabMilestone } from "../types.js";
 
-const groupIdSchema = z.string().describe("ID ou chemin du groupe GitLab");
+const groupIdSchema = z.string().describe("ID ou chemin URL du groupe GitLab (ex: '42' ou 'wanadev/kp1'). Si vous n'avez que le nom, appelez d'abord list_groups pour trouver le chemin exact.");
+const dryRunSchema = z.boolean().default(true).describe("Dry run mode (default: true). When true, returns a preview of the action without executing it. Set to false only after user confirmation.");
+
+function dryRunResponse(action: string, details: Record<string, unknown>): { content: { type: "text"; text: string }[] } {
+  const lines = Object.entries(details)
+    .filter(([, v]) => v !== undefined)
+    .map(([k, v]) => `  - **${k}:** ${v}`);
+  const text = `[DRY RUN] ${action}\n\n${lines.join("\n")}\n\nThis is a preview. Ask the user to confirm in their language before re-calling with dry_run=false.`;
+  return { content: [{ type: "text" as const, text }] };
+}
 
 function formatMilestone(m: GitLabMilestone): string {
   const due = m.due_date ? ` — Echeance: ${m.due_date}` : "";
@@ -75,18 +84,22 @@ export function registerMilestoneTools(server: McpServer, client: GitLabClient):
   });
 
   server.registerTool("create_milestone", {
-    description: "Creer un nouveau milestone dans un groupe GitLab.",
+    description: "Creer un nouveau milestone. Par defaut dry_run=true : retourne un apercu sans creer. Passer dry_run=false apres confirmation.",
     inputSchema: {
       group_id: groupIdSchema,
       title: z.string().describe("Titre du milestone"),
       description: z.string().optional().describe("Description du milestone"),
       start_date: z.string().optional().describe("Date de debut (YYYY-MM-DD)"),
       due_date: z.string().optional().describe("Date d'echeance (YYYY-MM-DD)"),
+      dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
   }, async (args) => {
     try {
-      const { group_id, ...data } = args;
+      const { group_id, dry_run, ...data } = args;
+      if (dry_run) {
+        return dryRunResponse("Creer un milestone", { groupe: group_id, ...data });
+      }
       const milestone = await client.createMilestone(group_id, data);
       return {
         content: [{ type: "text" as const, text: `Milestone cree avec succes !\n\n${formatMilestoneDetail(milestone)}` }],
