@@ -111,4 +111,59 @@ export function registerMilestoneTools(server: McpServer, client: GitLabClient):
       };
     }
   });
+
+  server.registerTool("update_milestone", {
+    description: "Mettre a jour un milestone existant. Par defaut dry_run=true.",
+    inputSchema: {
+      group_id: groupIdSchema,
+      milestone_id: z.number().describe("ID du milestone"),
+      title: z.string().optional().describe("Nouveau titre"),
+      description: z.string().optional().describe("Nouvelle description"),
+      start_date: z.string().optional().describe("Nouvelle date de debut (YYYY-MM-DD)"),
+      due_date: z.string().optional().describe("Nouvelle date d'echeance (YYYY-MM-DD)"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      const { group_id, milestone_id, dry_run, ...data } = args;
+      if (dry_run) {
+        return dryRunResponse("Modifier le milestone", { groupe: group_id, milestone_id, ...data });
+      }
+      const milestone = await client.updateMilestone(group_id, milestone_id, data);
+      return {
+        content: [{ type: "text" as const, text: `Milestone mis a jour !\n\n${formatMilestoneDetail(milestone)}` }],
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }],
+        isError: true,
+      };
+    }
+  });
+
+  server.registerTool("close_milestone", {
+    description: "Fermer un milestone. Par defaut dry_run=true.",
+    inputSchema: {
+      group_id: groupIdSchema,
+      milestone_id: z.number().describe("ID du milestone a fermer"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        return dryRunResponse("Fermer le milestone", { groupe: args.group_id, milestone_id: args.milestone_id });
+      }
+      const milestone = await client.closeMilestone(args.group_id, args.milestone_id);
+      return {
+        content: [{ type: "text" as const, text: `Milestone ferme !\n\n${formatMilestoneDetail(milestone)}` }],
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }],
+        isError: true,
+      };
+    }
+  });
 }

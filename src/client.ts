@@ -7,6 +7,10 @@ import type {
   GitLabProject,
   GitLabMember,
   GitLabGroup,
+  GitLabMergeRequest,
+  GitLabLabel,
+  GitLabNote,
+  GitLabBoard,
 } from "./types.js";
 
 export class GitLabClient {
@@ -259,6 +263,20 @@ export class GitLabClient {
     );
   }
 
+  async listEpicNotes(groupId: string, epicIid: number): Promise<GitLabNote[]> {
+    return this.paginate<GitLabNote>(
+      `/groups/${encodeURIComponent(groupId)}/epics/${epicIid}/notes`,
+    );
+  }
+
+  async addEpicNote(groupId: string, epicIid: number, body: string): Promise<GitLabNote> {
+    return this.request<GitLabNote>(
+      "POST",
+      `/groups/${encodeURIComponent(groupId)}/epics/${epicIid}/notes`,
+      { body },
+    );
+  }
+
   // --- Issues ---
 
   async listGroupIssues(groupId: string, params?: {
@@ -341,6 +359,55 @@ export class GitLabClient {
     return this.updateIssue(projectId, issueIid, { state_event: "close" });
   }
 
+  async listIssueNotes(projectId: number, issueIid: number): Promise<GitLabNote[]> {
+    return this.paginate<GitLabNote>(
+      `/projects/${projectId}/issues/${issueIid}/notes`,
+    );
+  }
+
+  async addIssueNote(projectId: number, issueIid: number, body: string): Promise<GitLabNote> {
+    return this.request<GitLabNote>(
+      "POST",
+      `/projects/${projectId}/issues/${issueIid}/notes`,
+      { body },
+    );
+  }
+
+  // --- Merge Requests ---
+
+  async listGroupMergeRequests(groupId: string, params?: {
+    state?: string;
+    search?: string;
+    labels?: string;
+    milestone?: string;
+    author_username?: string;
+    reviewer_username?: string;
+    order_by?: string;
+    sort?: string;
+  }): Promise<GitLabMergeRequest[]> {
+    const queryParams: Record<string, string> = {};
+    if (params?.state) queryParams["state"] = params.state;
+    if (params?.search) queryParams["search"] = params.search;
+    if (params?.labels) queryParams["labels"] = params.labels;
+    if (params?.milestone) queryParams["milestone"] = params.milestone;
+    if (params?.author_username) queryParams["author_username"] = params.author_username;
+    if (params?.reviewer_username) queryParams["reviewer_username"] = params.reviewer_username;
+    if (params?.order_by) queryParams["order_by"] = params.order_by;
+    if (params?.sort) queryParams["sort"] = params.sort;
+
+    return this.paginate<GitLabMergeRequest>(
+      `/groups/${encodeURIComponent(groupId)}/merge_requests`,
+      queryParams,
+    );
+  }
+
+  async getMergeRequest(projectId: number, mrIid: number): Promise<GitLabMergeRequest> {
+    return this.request<GitLabMergeRequest>(
+      "GET",
+      `/projects/${projectId}/merge_requests/${mrIid}`,
+    );
+  }
+
   // --- Milestones ---
 
   async listGroupMilestones(groupId: string, params?: {
@@ -377,6 +444,28 @@ export class GitLabClient {
     );
   }
 
+  async updateMilestone(
+    groupId: string,
+    milestoneId: number,
+    data: {
+      title?: string;
+      description?: string;
+      start_date?: string;
+      due_date?: string;
+      state_event?: string;
+    },
+  ): Promise<GitLabMilestone> {
+    return this.request<GitLabMilestone>(
+      "PUT",
+      `/groups/${encodeURIComponent(groupId)}/milestones/${milestoneId}`,
+      data,
+    );
+  }
+
+  async closeMilestone(groupId: string, milestoneId: number): Promise<GitLabMilestone> {
+    return this.updateMilestone(groupId, milestoneId, { state_event: "close" });
+  }
+
   // --- Utils ---
 
   async listProjects(groupId: string, params?: {
@@ -402,6 +491,24 @@ export class GitLabClient {
     return this.paginate<GitLabMember>(
       `/groups/${encodeURIComponent(groupId)}/members`,
       queryParams,
+    );
+  }
+
+  async listGroupLabels(groupId: string, params?: {
+    search?: string;
+  }): Promise<GitLabLabel[]> {
+    const queryParams: Record<string, string> = {};
+    if (params?.search) queryParams["search"] = params.search;
+
+    return this.paginate<GitLabLabel>(
+      `/groups/${encodeURIComponent(groupId)}/labels`,
+      queryParams,
+    );
+  }
+
+  async listGroupBoards(groupId: string): Promise<GitLabBoard[]> {
+    return this.paginate<GitLabBoard>(
+      `/groups/${encodeURIComponent(groupId)}/boards`,
     );
   }
 

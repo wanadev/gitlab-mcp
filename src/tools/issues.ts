@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
-import type { GitLabIssue } from "../types.js";
+import type { GitLabIssue, GitLabNote } from "../types.js";
 
 const dryRunSchema = z.boolean().default(true).describe("Dry run mode (default: true). When true, returns a preview of the action without executing it. Set to false only after user confirmation.");
 
@@ -44,6 +44,8 @@ function formatIssueDetail(i: GitLabIssue): string {
     i.epic_iid ? `**Epic:** #${i.epic_iid}` : null,
     i.weight != null ? `**Poids:** ${i.weight}` : null,
     i.due_date ? `**Echeance:** ${i.due_date}` : null,
+    i.time_stats?.human_time_estimate ? `**Temps estime:** ${i.time_stats.human_time_estimate}` : null,
+    i.time_stats?.human_total_time_spent ? `**Temps passe:** ${i.time_stats.human_total_time_spent}` : null,
     `**Cree le:** ${i.created_at}`,
     `**Mis a jour:** ${i.updated_at}`,
     i.closed_at ? `**Ferme le:** ${i.closed_at}` : null,
@@ -184,6 +186,58 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
       const issue = await client.closeIssue(args.project_id, args.issue_iid);
       return {
         content: [{ type: "text" as const, text: `Issue #${issue.iid} fermee.\n\n${formatIssueDetail(issue)}` }],
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }],
+        isError: true,
+      };
+    }
+  });
+
+  server.registerTool("list_issue_notes", {
+    description: "Lister les commentaires d'une issue.",
+    inputSchema: {
+      project_id: z.number().describe("ID du projet"),
+      issue_iid: z.number().describe("Numero de l'issue (IID)"),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const notes = await client.listIssueNotes(args.project_id, args.issue_iid);
+      const userNotes = notes.filter((n: GitLabNote) => !n.system);
+      if (userNotes.length === 0) {
+        return { content: [{ type: "text" as const, text: "Aucun commentaire sur cette issue." }] };
+      }
+      const text = userNotes.map((n: GitLabNote) =>
+        `**${n.author.name}** (@${n.author.username}) — ${n.created_at}\n${n.body}`
+      ).join("\n\n---\n\n");
+      return { content: [{ type: "text" as const, text: `${userNotes.length} commentaire(s) :\n\n${text}` }] };
+    } catch (error) {
+      return {
+        content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }],
+        isError: true,
+      };
+    }
+  });
+
+  server.registerTool("add_issue_note", {
+    description: "Ajouter un commentaire sur une issue. Par defaut dry_run=true.",
+    inputSchema: {
+      project_id: z.number().describe("ID du projet"),
+      issue_iid: z.number().describe("Numero de l'issue (IID)"),
+      body: z.string().describe("Contenu du commentaire (Markdown)"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        return dryRunResponse("Commenter l'issue", { project_id: args.project_id, issue_iid: args.issue_iid, body: args.body });
+      }
+      const note = await client.addIssueNote(args.project_id, args.issue_iid, args.body);
+      return {
+        content: [{ type: "text" as const, text: `Commentaire ajoute sur l'issue #${args.issue_iid} par @${note.author.username}.` }],
       };
     } catch (error) {
       return {

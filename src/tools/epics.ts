@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
-import type { GitLabEpic, GitLabIssue } from "../types.js";
+import type { GitLabEpic, GitLabIssue, GitLabNote } from "../types.js";
 
 const groupIdSchema = z.string().describe("ID ou chemin URL du groupe GitLab (ex: '42' ou 'wanadev/kp1'). Si vous n'avez que le nom, appelez d'abord list_groups pour trouver le chemin exact.");
 const dryRunSchema = z.boolean().default(true).describe("Dry run mode (default: true). When true, returns a preview of the action without executing it. Set to false only after user confirmation.");
@@ -229,6 +229,58 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
       await client.addIssueToEpic(args.group_id, args.epic_iid, args.issue_id);
       return {
         content: [{ type: "text" as const, text: `Issue ${args.issue_id} rattachee a l'epic #${args.epic_iid}.` }],
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }],
+        isError: true,
+      };
+    }
+  });
+
+  server.registerTool("list_epic_notes", {
+    description: "Lister les commentaires d'un epic.",
+    inputSchema: {
+      group_id: groupIdSchema,
+      epic_iid: z.number().describe("Numero de l'epic (IID)"),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const notes = await client.listEpicNotes(args.group_id, args.epic_iid);
+      const userNotes = notes.filter((n: GitLabNote) => !n.system);
+      if (userNotes.length === 0) {
+        return { content: [{ type: "text" as const, text: "Aucun commentaire sur cet epic." }] };
+      }
+      const text = userNotes.map((n: GitLabNote) =>
+        `**${n.author.name}** (@${n.author.username}) — ${n.created_at}\n${n.body}`
+      ).join("\n\n---\n\n");
+      return { content: [{ type: "text" as const, text: `${userNotes.length} commentaire(s) :\n\n${text}` }] };
+    } catch (error) {
+      return {
+        content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }],
+        isError: true,
+      };
+    }
+  });
+
+  server.registerTool("add_epic_note", {
+    description: "Ajouter un commentaire sur un epic. Par defaut dry_run=true.",
+    inputSchema: {
+      group_id: groupIdSchema,
+      epic_iid: z.number().describe("Numero de l'epic (IID)"),
+      body: z.string().describe("Contenu du commentaire (Markdown)"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        return dryRunResponse("Commenter l'epic", { groupe: args.group_id, epic_iid: args.epic_iid, body: args.body });
+      }
+      const note = await client.addEpicNote(args.group_id, args.epic_iid, args.body);
+      return {
+        content: [{ type: "text" as const, text: `Commentaire ajoute sur l'epic #${args.epic_iid} par @${note.author.username}.` }],
       };
     } catch (error) {
       return {

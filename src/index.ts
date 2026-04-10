@@ -5,6 +5,7 @@ import { GitLabClient } from "./client.js";
 import { registerEpicTools } from "./tools/epics.js";
 import { registerIssueTools } from "./tools/issues.js";
 import { registerMilestoneTools } from "./tools/milestones.js";
+import { registerMergeRequestTools } from "./tools/merge_requests.js";
 import { registerUtilTools } from "./tools/utils.js";
 
 function getEnvOrExit(name: string, description: string): string {
@@ -39,6 +40,7 @@ async function main(): Promise<void> {
   registerEpicTools(server, client);
   registerIssueTools(server, client);
   registerMilestoneTools(server, client);
+  registerMergeRequestTools(server, client);
   registerUtilTools(server, client);
 
   const transport = new StdioServerTransport();
