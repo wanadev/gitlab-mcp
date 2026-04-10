@@ -1,6 +1,5 @@
 {
   "name": "wanadev-gitlab",
-  "version": "1.0.0",
   "description": "GitLab MCP server for project managers — epics, issues, milestones, merge requests, labels, boards, iterations, and comments.",
   "author": {
     "name": "Wanadev",
