@@ -15,8 +15,11 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
+import { readFileSync } from "node:fs";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, "..");
+const pkg = JSON.parse(readFileSync(resolve(PROJECT_ROOT, "package.json"), "utf8"));
 
 // ---------------------------------------------------------------------------
 // Expected tool names
@@ -56,6 +59,7 @@ const EXPECTED_TOOLS = [
   "list_group_members",
   "list_labels",
   "list_boards",
+  "list_iterations",
   "get_current_user",
 ];
 
@@ -95,6 +99,7 @@ const GROUP_SCOPED_TOOLS = [
   "list_group_members",
   "list_labels",
   "list_boards",
+  "list_iterations",
 ];
 
 // ---------------------------------------------------------------------------
@@ -165,18 +170,18 @@ describe("MCP server smoke tests", () => {
     const info = client.getServerVersion();
     assert.ok(info, "server version info should be available after connect");
     assert.equal(info.name, "@wanadev/mcp-gitlab");
-    assert.equal(info.version, "1.0.0");
+    assert.equal(info.version, pkg.version);
   });
 
   // -----------------------------------------------------------------------
   // 2. Exactly 29 tools registered
   // -----------------------------------------------------------------------
 
-  it("should expose exactly 29 tools", () => {
+  it(`should expose exactly ${EXPECTED_TOOLS.length} tools`, () => {
     assert.equal(
       tools.size,
-      29,
-      `Expected 29 tools, got ${tools.size}: ${[...tools.keys()].join(", ")}`,
+      EXPECTED_TOOLS.length,
+      `Expected ${EXPECTED_TOOLS.length} tools, got ${tools.size}: ${[...tools.keys()].join(", ")}`,
     );
   });
 
