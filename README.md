@@ -78,7 +78,7 @@ All write tools (`create_*`, `update_*`, `close_*`, `add_issue_to_epic`, `add_is
 
 This prevents accidental changes: the LLM always shows what it intends to do first and only proceeds after your approval.
 
-## All 29 tools
+## All 30 tools
 
 ### Epics (9 tools -- requires GitLab Premium/Ultimate)
 
@@ -122,6 +122,12 @@ This prevents accidental changes: the LLM always shows what it intends to do fir
 |------|-------------|:-----:|:-----:|
 | `list_merge_requests` | List merge requests for a group | group | -- |
 | `get_merge_request` | Get merge request details | project | -- |
+
+### Iterations (1 tool -- requires GitLab Premium/Ultimate)
+
+| Tool | Description | Scope | Write |
+|------|-------------|:-----:|:-----:|
+| `list_iterations` | List iterations/sprints (filter by state: upcoming, current, closed) | group | -- |
 
 ### Utilities (6 tools)
 
@@ -168,16 +174,6 @@ Claude calls `list_merge_requests` (state: opened) → `list_issues` (state: clo
 > *"Give me a status report on epic #12 in group wanadev: how many issues are done vs. open, what's the total time spent, and list the latest comments."*
 
 Claude chains `get_epic` → `list_epic_issues` → reads `time_stats` from each issue → `list_epic_notes` → returns a structured progress report.
-
-| Tool | Description | `group_id` requis | dry_run |
-|------|-------------|:---:|:---:|
-| `list_epics` | Lister les epics (filtre par etat, recherche, labels) | Oui | — |
-| `get_epic` | Details d'un epic par numero | Oui | — |
-| `create_epic` | Creer un epic (avec milestone_id optionnel) | Oui | Oui |
-| `update_epic` | Modifier un epic (dont milestone_id) | Oui | Oui |
-| `close_epic` | Fermer un epic | Oui | Oui |
-| `list_epic_issues` | Issues rattachees a un epic | Oui | — |
-| `add_issue_to_epic` | Rattacher une issue a un epic | Oui | Oui |
 
 ### Cross-group dashboard
 
