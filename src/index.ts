@@ -34,7 +34,7 @@ async function main(): Promise<void> {
 
   const server = new McpServer({
     name: "@wanadev/mcp-gitlab",
-    version: "1.0.2",
+    version: "1.0.3",
   });
 
   registerEpicTools(server, client);
