@@ -32,10 +32,11 @@ Existing tools like **glab** are developer-oriented: they focus on merge request
 
 ### 2. Install
 
-#### Claude Code (one command)
+#### Claude Code (plugin)
 
 ```
-/install-plugin https://github.com/wanadev/gitlab-mcp
+/plugin marketplace add wanadev/gitlab-mcp
+/plugin install wanadev-gitlab@gitlab-mcp
 ```
 
 Set `GITLAB_TOKEN` in your environment (`.bashrc`, `.zshrc`, or system variable). The plugin will guide you on first launch if it's missing.
