@@ -1,0 +1,21 @@
+{
+  "name": "wanadev-gitlab",
+  "owner": {
+    "name": "Wanadev",
+    "email": "dev@wanadev.fr"
+  },
+  "plugins": [
+    {
+      "name": "wanadev-gitlab",
+      "source": "./plugins/wanadev-gitlab",
+      "description": "GitLab MCP server for project managers — epics, issues, milestones, merge requests, labels, boards, iterations, and comments.",
+      "author": {
+        "name": "Wanadev"
+      },
+      "homepage": "https://github.com/wanadev/gitlab-mcp",
+      "repository": "https://github.com/wanadev/gitlab-mcp",
+      "license": "MIT",
+      "keywords": ["gitlab", "mcp", "project-management", "epics", "milestones", "iterations"]
+    }
+  ]
+}

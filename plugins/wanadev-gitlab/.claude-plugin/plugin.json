@@ -7,5 +7,5 @@
   },
   "repository": "https://github.com/wanadev/gitlab-mcp",
   "license": "MIT",
-  "keywords": ["gitlab", "mcp", "project-management", "epics", "milestones"]
+  "keywords": ["gitlab", "mcp", "project-management", "epics", "milestones", "iterations"]
 }
