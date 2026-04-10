@@ -104,7 +104,6 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
       title: z.string().describe("Titre de l'epic"),
       description: z.string().optional().describe("Description de l'epic (Markdown)"),
       labels: z.string().optional().describe("Labels separes par virgule"),
-      milestone_id: z.number().optional().describe("ID du milestone a associer"),
       start_date: z.string().optional().describe("Date de debut (YYYY-MM-DD)"),
       due_date: z.string().optional().describe("Date d'echeance (YYYY-MM-DD)"),
       dry_run: dryRunSchema,
@@ -136,7 +135,6 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
       title: z.string().optional().describe("Nouveau titre"),
       description: z.string().optional().describe("Nouvelle description (Markdown)"),
       labels: z.string().optional().describe("Nouveaux labels (separes par virgule)"),
-      milestone_id: z.number().optional().describe("ID du milestone a associer"),
       start_date: z.string().optional().describe("Nouvelle date de debut (YYYY-MM-DD)"),
       due_date: z.string().optional().describe("Nouvelle date d'echeance (YYYY-MM-DD)"),
       dry_run: dryRunSchema,
@@ -289,6 +287,164 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
         content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }],
         isError: true,
       };
+    }
+  });
+
+  // --- Work Items tools ---
+
+  server.registerTool("get_epic_widgets", {
+    description: "Get Work Item widgets for an epic: health status, progress, milestone, iteration, and linked items.",
+    inputSchema: {
+      group_id: groupIdSchema,
+      epic_iid: z.number().describe("Epic IID"),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const epic = await client.getEpicWidgets(args.group_id, args.epic_iid);
+      const widgets = epic.widgets ?? [];
+      const parts: string[] = [`# Epic: ${epic.title ?? ""} (#${epic.iid ?? args.epic_iid})`, ""];
+
+      for (const w of widgets) {
+        switch (w.type) {
+          case "HEALTH_STATUS":
+            parts.push(`**Health status:** ${w.healthStatus ?? "not set"}`);
+            break;
+          case "PROGRESS":
+            parts.push(`**Progress:** ${w.progress ?? 0}% (current value: ${w.currentValue ?? 0})`);
+            break;
+          case "MILESTONE":
+            parts.push(`**Milestone:** ${w.milestone?.title ?? "none"}`);
+            break;
+          case "ITERATION":
+            parts.push(`**Iteration:** ${w.iteration?.title ?? "none"}${w.iteration?.startDate ? ` (${w.iteration.startDate} → ${w.iteration.dueDate})` : ""}`);
+            break;
+          case "LINKED_ITEMS":
+            if (w.linkedItems?.nodes?.length) {
+              parts.push(`**Linked items:** ${w.linkedItems.nodes.length}`);
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              for (const link of w.linkedItems.nodes as any[]) {
+                parts.push(`  - ${link.linkType}: ${link.workItem?.title ?? "?"} (${link.workItem?.state ?? "?"}) ${link.workItem?.webUrl ?? ""}`);
+              }
+            }
+            break;
+        }
+      }
+      return { content: [{ type: "text" as const, text: parts.join("\n") }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("set_epic_milestone", {
+    description: "Associate a milestone with an epic (uses Work Items API). dry_run=true by default.",
+    inputSchema: {
+      group_id: groupIdSchema,
+      epic_iid: z.number().describe("Epic IID"),
+      milestone_id: z.number().nullable().describe("Milestone ID (null to remove)"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        return dryRunResponse("Set epic milestone", { group: args.group_id, epic_iid: args.epic_iid, milestone_id: args.milestone_id ?? "(remove)" });
+      }
+      await client.setEpicMilestone(args.group_id, args.epic_iid, args.milestone_id);
+      return { content: [{ type: "text" as const, text: args.milestone_id ? `Milestone ${args.milestone_id} set on epic #${args.epic_iid}.` : `Milestone removed from epic #${args.epic_iid}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("set_epic_health_status", {
+    description: "Set the health status of an epic (onTrack, needsAttention, atRisk, or null to clear). dry_run=true by default.",
+    inputSchema: {
+      group_id: groupIdSchema,
+      epic_iid: z.number().describe("Epic IID"),
+      health_status: z.enum(["onTrack", "needsAttention", "atRisk"]).nullable().describe("Health status (null to clear)"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        return dryRunResponse("Set epic health status", { group: args.group_id, epic_iid: args.epic_iid, health_status: args.health_status ?? "(clear)" });
+      }
+      await client.setHealthStatus({ type: "epic", groupId: args.group_id, epicIid: args.epic_iid }, args.health_status);
+      return { content: [{ type: "text" as const, text: `Health status of epic #${args.epic_iid} set to ${args.health_status ?? "cleared"}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("set_issue_health_status", {
+    description: "Set the health status of an issue (onTrack, needsAttention, atRisk, or null to clear). dry_run=true by default.",
+    inputSchema: {
+      project_id: z.number().describe("Project ID"),
+      issue_iid: z.number().describe("Issue IID"),
+      health_status: z.enum(["onTrack", "needsAttention", "atRisk"]).nullable().describe("Health status (null to clear)"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        return dryRunResponse("Set issue health status", { project_id: args.project_id, issue_iid: args.issue_iid, health_status: args.health_status ?? "(clear)" });
+      }
+      await client.setHealthStatus({ type: "issue", projectId: args.project_id, issueIid: args.issue_iid }, args.health_status);
+      return { content: [{ type: "text" as const, text: `Health status of issue #${args.issue_iid} set to ${args.health_status ?? "cleared"}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("set_epic_iteration", {
+    description: "Associate an iteration (sprint) with an epic (uses Work Items API). dry_run=true by default.",
+    inputSchema: {
+      group_id: groupIdSchema,
+      epic_iid: z.number().describe("Epic IID"),
+      iteration_id: z.number().nullable().describe("Iteration ID (null to remove)"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        return dryRunResponse("Set epic iteration", { group: args.group_id, epic_iid: args.epic_iid, iteration_id: args.iteration_id ?? "(remove)" });
+      }
+      await client.setEpicIteration(args.group_id, args.epic_iid, args.iteration_id);
+      return { content: [{ type: "text" as const, text: args.iteration_id ? `Iteration ${args.iteration_id} set on epic #${args.epic_iid}.` : `Iteration removed from epic #${args.epic_iid}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("add_linked_item", {
+    description: "Create a link between two work items (epics or issues). Link types: RELATED, BLOCKS, BLOCKED_BY. dry_run=true by default.",
+    inputSchema: {
+      source_type: z.enum(["epic", "issue"]).describe("Source work item type"),
+      group_id: z.string().optional().describe("Group ID (required if source is epic)"),
+      project_id: z.number().optional().describe("Project ID (required if source is issue)"),
+      source_iid: z.number().describe("Source IID (epic or issue)"),
+      target_gid: z.string().describe("Target work item GID (e.g. gid://gitlab/Issue/123 — get it from get_issue or get_epic_widgets)"),
+      link_type: z.enum(["RELATED", "BLOCKS", "BLOCKED_BY"]).describe("Relationship type"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        return dryRunResponse("Link work items", { source: `${args.source_type} #${args.source_iid}`, target: args.target_gid, link_type: args.link_type });
+      }
+      const target = args.source_type === "epic"
+        ? { type: "epic" as const, groupId: args.group_id!, epicIid: args.source_iid }
+        : { type: "issue" as const, projectId: args.project_id!, issueIid: args.source_iid };
+      await client.addLinkedItem(target, args.target_gid, args.link_type);
+      return { content: [{ type: "text" as const, text: `Link created: ${args.source_type} #${args.source_iid} ${args.link_type} ${args.target_gid}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
     }
   });
 }

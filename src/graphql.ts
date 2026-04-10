@@ -464,6 +464,76 @@ export const M_EPIC_ADD_ISSUE = `
   }
 `;
 
+// --- Work Items mutations ---
+
+export const Q_WORK_ITEM_ID = `
+  query($fullPath: ID!, $iid: ID!) {
+    group(fullPath: $fullPath) {
+      epic(iid: $iid) { id }
+    }
+  }
+`;
+
+export const Q_WORK_ITEM_WIDGETS = `
+  query($fullPath: ID!, $iid: ID!) {
+    group(fullPath: $fullPath) {
+      epic(iid: $iid) {
+        id iid title webUrl
+        widgets {
+          type
+          ... on WorkItemWidgetHealthStatus { healthStatus }
+          ... on WorkItemWidgetProgress { progress currentValue }
+          ... on WorkItemWidgetMilestone { milestone { id title } }
+          ... on WorkItemWidgetIteration { iteration { id title startDate dueDate } }
+          ... on WorkItemWidgetLinkedItems {
+            linkedItems(first: 100) {
+              nodes {
+                linkType
+                workItem { id title state webUrl workItemType { name } }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const Q_ISSUE_WORK_ITEM_ID = `
+  query($projectPath: ID!, $iid: String!) {
+    project(fullPath: $projectPath) {
+      issue(iid: $iid) { id }
+    }
+  }
+`;
+
+export const M_WORK_ITEM_UPDATE = `
+  mutation($input: WorkItemUpdateInput!) {
+    workItemUpdate(input: $input) {
+      workItem {
+        id
+        widgets {
+          type
+          ... on WorkItemWidgetHealthStatus { healthStatus }
+          ... on WorkItemWidgetProgress { progress currentValue }
+          ... on WorkItemWidgetMilestone { milestone { id title } }
+          ... on WorkItemWidgetIteration { iteration { id title } }
+        }
+      }
+      errors
+    }
+  }
+`;
+
+export const M_WORK_ITEM_ADD_LINKED = `
+  mutation($input: WorkItemAddLinkedItemsInput!) {
+    workItemAddLinkedItems(input: $input) {
+      workItem { id }
+      errors
+    }
+  }
+`;
+
 // ---------------------------------------------------------------------------
 // Mappers
 // ---------------------------------------------------------------------------

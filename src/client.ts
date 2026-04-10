@@ -12,6 +12,8 @@ import {
   Q_ITERATIONS, Q_PROJECTS, Q_MEMBERS, Q_LABELS, Q_BOARDS, Q_PROJECT_PATH,
   M_CREATE_EPIC, M_UPDATE_EPIC, M_CREATE_MILESTONE, M_UPDATE_MILESTONE,
   M_CREATE_ISSUE, M_UPDATE_ISSUE, M_CREATE_NOTE, M_EPIC_ADD_ISSUE,
+  Q_WORK_ITEM_ID, Q_WORK_ITEM_WIDGETS, Q_ISSUE_WORK_ITEM_ID,
+  M_WORK_ITEM_UPDATE, M_WORK_ITEM_ADD_LINKED,
   mapUser, mapEpic, mapIssue, mapMilestone, mapMergeRequest,
   mapGroup, mapProject, mapMember, mapLabel, mapNote, mapBoard, mapIteration,
 } from "./graphql.js";
@@ -215,7 +217,6 @@ export class GitLabClient {
     title: string;
     description?: string;
     labels?: string;
-    milestone_id?: number;
     start_date?: string;
     due_date?: string;
   }): Promise<GitLabEpic> {
@@ -226,7 +227,6 @@ export class GitLabClient {
     };
     if (data.description) input.description = data.description;
     if (data.labels) input.addLabelIds = data.labels.split(",").map(s => s.trim());
-    if (data.milestone_id) input.milestoneId = toGid("Milestone", data.milestone_id);
     if (data.start_date) input.startDateFixed = data.start_date;
     if (data.due_date) input.dueDateFixed = data.due_date;
 
@@ -241,7 +241,6 @@ export class GitLabClient {
       title?: string;
       description?: string;
       labels?: string;
-      milestone_id?: number;
       start_date?: string;
       due_date?: string;
       state_event?: string;
@@ -255,7 +254,6 @@ export class GitLabClient {
     if (data.title) input.title = data.title;
     if (data.description) input.description = data.description;
     if (data.labels) input.addLabelIds = data.labels.split(",").map(s => s.trim());
-    if (data.milestone_id) input.milestoneId = toGid("Milestone", data.milestone_id);
     if (data.start_date) input.startDateFixed = data.start_date;
     if (data.due_date) input.dueDateFixed = data.due_date;
     if (data.state_event === "close") input.stateEvent = "CLOSE";
@@ -309,6 +307,79 @@ export class GitLabClient {
     const noteableId = toGid("Epic", epic.id);
     const result = await this.mutate(M_CREATE_NOTE, { noteableId, body }, "createNote");
     return mapNote(result.note);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Work Items (epic widgets: milestone, health status, progress, linked items)
+  // ---------------------------------------------------------------------------
+
+  private async resolveEpicGid(groupId: string, epicIid: number): Promise<string> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await this.graphql<any>(Q_WORK_ITEM_ID, { fullPath: groupId, iid: String(epicIid) });
+    const gid = data.group?.epic?.id;
+    if (!gid) throw new Error(`Epic #${epicIid} not found in group ${groupId}`);
+    return gid;
+  }
+
+  private async resolveIssueGid(projectId: number, issueIid: number): Promise<string> {
+    const projectPath = await this.resolveProjectPath(projectId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await this.graphql<any>(Q_ISSUE_WORK_ITEM_ID, { projectPath, iid: String(issueIid) });
+    const gid = data.project?.issue?.id;
+    if (!gid) throw new Error(`Issue #${issueIid} not found in project ${projectId}`);
+    return gid;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async getEpicWidgets(groupId: string, epicIid: number): Promise<any> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await this.graphql<any>(Q_WORK_ITEM_WIDGETS, { fullPath: groupId, iid: String(epicIid) });
+    if (!data.group?.epic) throw new Error(`Epic #${epicIid} not found in group ${groupId}`);
+    return data.group.epic;
+  }
+
+  async setEpicMilestone(groupId: string, epicIid: number, milestoneId: number | null): Promise<void> {
+    const epicGid = await this.resolveEpicGid(groupId, epicIid);
+    await this.mutate(M_WORK_ITEM_UPDATE, {
+      id: epicGid,
+      milestoneWidget: { milestoneId: milestoneId ? toGid("Milestone", milestoneId) : null },
+    }, "workItemUpdate");
+  }
+
+  async setHealthStatus(
+    target: { type: "epic"; groupId: string; epicIid: number } | { type: "issue"; projectId: number; issueIid: number },
+    healthStatus: string | null,
+  ): Promise<void> {
+    const gid = target.type === "epic"
+      ? await this.resolveEpicGid(target.groupId, target.epicIid)
+      : await this.resolveIssueGid(target.projectId, target.issueIid);
+    await this.mutate(M_WORK_ITEM_UPDATE, {
+      id: gid,
+      healthStatusWidget: { healthStatus: healthStatus?.toUpperCase() ?? null },
+    }, "workItemUpdate");
+  }
+
+  async setEpicIteration(groupId: string, epicIid: number, iterationId: number | null): Promise<void> {
+    const epicGid = await this.resolveEpicGid(groupId, epicIid);
+    await this.mutate(M_WORK_ITEM_UPDATE, {
+      id: epicGid,
+      iterationWidget: { iterationId: iterationId ? toGid("Iteration", iterationId) : null },
+    }, "workItemUpdate");
+  }
+
+  async addLinkedItem(
+    sourceTarget: { type: "epic"; groupId: string; epicIid: number } | { type: "issue"; projectId: number; issueIid: number },
+    linkedGid: string,
+    linkType: string,
+  ): Promise<void> {
+    const sourceGid = sourceTarget.type === "epic"
+      ? await this.resolveEpicGid(sourceTarget.groupId, sourceTarget.epicIid)
+      : await this.resolveIssueGid(sourceTarget.projectId, sourceTarget.issueIid);
+    await this.mutate(M_WORK_ITEM_ADD_LINKED, {
+      id: sourceGid,
+      workItemsIds: [linkedGid],
+      linkType: linkType.toUpperCase(),
+    }, "workItemAddLinkedItems");
   }
 
   // ---------------------------------------------------------------------------
