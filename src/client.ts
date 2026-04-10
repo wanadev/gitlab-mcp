@@ -213,6 +213,7 @@ export class GitLabClient {
     title: string;
     description?: string;
     labels?: string;
+    milestone_id?: number;
     start_date?: string;
     due_date?: string;
   }): Promise<GitLabEpic> {
@@ -230,6 +231,7 @@ export class GitLabClient {
       title?: string;
       description?: string;
       labels?: string;
+      milestone_id?: number;
       start_date?: string;
       due_date?: string;
       state_event?: string;
