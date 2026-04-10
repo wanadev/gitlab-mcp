@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
-import type { GitLabProject, GitLabMember, GitLabUser, GitLabGroup, GitLabLabel, GitLabBoard } from "../types.js";
+import type { GitLabProject, GitLabMember, GitLabUser, GitLabGroup, GitLabLabel, GitLabBoard, GitLabIteration } from "../types.js";
 
 const groupIdSchema = z.string().describe("ID ou chemin URL du groupe GitLab (ex: '42' ou 'wanadev/kp1'). Si vous n'avez que le nom, appelez d'abord list_groups pour trouver le chemin exact.");
 
@@ -167,6 +167,34 @@ export function registerUtilTools(server: McpServer, client: GitLabClient): void
     try {
       const boards = await client.listGroupBoards(args.group_id);
       return { content: [{ type: "text" as const, text: formatBoards(boards) }] };
+    } catch (error) {
+      return {
+        content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }],
+        isError: true,
+      };
+    }
+  });
+
+  server.registerTool("list_iterations", {
+    description: "List iterations (sprints) for a GitLab group. Filter by state (upcoming, current, closed) or search by title. Requires GitLab Premium/Ultimate.",
+    inputSchema: {
+      group_id: groupIdSchema,
+      state: z.enum(["upcoming", "current", "closed"]).optional().describe("Filter by state"),
+      search: z.string().optional().describe("Search by iteration title"),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const { group_id, ...params } = args;
+      const iterations = await client.listGroupIterations(group_id, params);
+      if (iterations.length === 0) {
+        return { content: [{ type: "text" as const, text: "No iterations found." }] };
+      }
+      const text = iterations.map((it: GitLabIteration) => {
+        const dates = `${it.start_date} → ${it.due_date}`;
+        return `**${it.title}** (id:${it.id}) — ${it.state} — ${dates}\n  ${it.web_url}`;
+      }).join("\n\n");
+      return { content: [{ type: "text" as const, text: `${iterations.length} iteration(s) :\n\n${text}` }] };
     } catch (error) {
       return {
         content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }],
