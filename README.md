@@ -1,27 +1,41 @@
 # @wanadev/mcp-gitlab
 
-Serveur MCP (Model Context Protocol) pour gerer les **epics**, **issues** et **milestones** GitLab depuis Claude Desktop ou tout client MCP compatible.
+A Model Context Protocol (MCP) server that gives project managers full control over GitLab **epics**, **issues**, **milestones**, **merge requests**, **labels**, and **boards** from Claude Desktop or any MCP-compatible client.
 
-## Installation rapide
+## Why this MCP server?
 
-### Prerequis
+Existing tools like **glab** are developer-oriented: they focus on merge requests, pipelines, and code review. Project managers need a different lens -- one centered on **planning and tracking**.
+
+`@wanadev/mcp-gitlab` fills that gap:
+
+- **Epics & milestones** -- create, update, close, and link issues to epics.
+- **Cross-group visibility** -- query multiple GitLab groups in the same conversation (no hardcoded group ID).
+- **Time tracking** -- see estimated vs. spent time on issues at a glance.
+- **Labels & boards** -- list labels and issue boards without leaving your chat.
+- **Comments (notes)** -- read and add notes on both issues and epics.
+- **Merge request monitoring** -- track MR status without switching to the developer workflow.
+- **Dry-run by default** -- every write operation previews what it will do before touching GitLab.
+
+## Quick setup
+
+### Prerequisites
 
 - **Node.js >= 20**
-- Un **Personal Access Token** (PAT) GitLab avec le scope `api` (ou `read_api` pour lecture seule)
-- **GitLab Premium/Ultimate** pour les epics (issues et milestones fonctionnent avec toutes les editions)
+- A GitLab **Personal Access Token** (PAT) with the `api` scope (or `read_api` for read-only access)
+- **GitLab Premium/Ultimate** for epics (issues, milestones, MRs, and utilities work with all editions)
 
-### 1. Generer un token GitLab
+### 1. Generate a GitLab token
 
-1. Aller dans **GitLab > Settings > Access Tokens**
-2. Creer un token avec le scope `api`
-3. Copier le token
+1. Go to **GitLab > Settings > Access Tokens**
+2. Create a token with the `api` scope
+3. Copy the token
 
-### 2. Configurer Claude Desktop
+### 2. Configure Claude Desktop
 
-Ajouter dans votre fichier `claude_desktop_config.json` :
+Add the following to your `claude_desktop_config.json`:
 
-**Windows :** `%APPDATA%\Claude\claude_desktop_config.json`
-**macOS :** `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 
 ```json
 {
@@ -39,32 +53,121 @@ Ajouter dans votre fichier `claude_desktop_config.json` :
 }
 ```
 
-### 3. Redemarrer Claude Desktop
+### 3. Restart Claude Desktop
 
-Le serveur MCP sera disponible immediatement. Testez avec : *"Liste mes groupes GitLab"*
+The MCP server will be available immediately. Test with: *"List my GitLab groups"*
 
-## Variables d'environnement
+## Environment variables
 
-| Variable | Requis | Description |
-|----------|--------|-------------|
-| `GITLAB_TOKEN` | Oui | Personal Access Token GitLab |
-| `GITLAB_BASE_URL` | Non | URL de l'instance GitLab (defaut: `https://gitlab.com`) |
-| `GITLAB_READ_ONLY` | Non | `true` pour bloquer toutes les operations d'ecriture |
+| Variable | Required | Description |
+|----------|:--------:|-------------|
+| `GITLAB_TOKEN` | Yes | GitLab Personal Access Token |
+| `GITLAB_BASE_URL` | No | GitLab instance URL (default: `https://gitlab.com`) |
+| `GITLAB_READ_ONLY` | No | Set to `true` to block all write operations |
 
-> **Note :** Le `group_id` n'est plus une variable d'environnement. Chaque tool group-scoped prend un parametre `group_id` requis. Utilisez `list_groups` pour decouvrir les groupes accessibles.
+> **Note:** There is no `GITLAB_GROUP_ID` environment variable. Every group-scoped tool takes a `group_id` parameter. Use `list_groups` to discover accessible groups -- the LLM does this automatically.
 
-## Mode dry-run (confirmation avant ecriture)
+## Dry-run safety
 
-Tous les tools d'ecriture (`create_*`, `update_*`, `close_*`, `add_issue_to_epic`) ont un parametre `dry_run` qui vaut **`true` par defaut**.
+All write tools (`create_*`, `update_*`, `close_*`, `add_issue_to_epic`, `add_issue_note`, `add_epic_note`) include a `dry_run` parameter that defaults to **`true`**.
 
-- **`dry_run: true`** (defaut) — retourne un resume de l'action prevue sans rien executer sur GitLab.
-- **`dry_run: false`** — execute reellement l'action apres confirmation de l'utilisateur.
+| Mode | Behavior |
+|------|----------|
+| `dry_run: true` (default) | Returns a summary of the planned action **without** executing anything on GitLab. |
+| `dry_run: false` | Executes the action for real, after the user confirms. |
 
-Cela evite toute modification accidentelle : le LLM montre d'abord ce qu'il va faire, et n'execute qu'apres votre accord.
+This prevents accidental changes: the LLM always shows what it intends to do first and only proceeds after your approval.
 
-## Les 19 tools disponibles
+## All 29 tools
 
-### Epics (necessite GitLab Premium/Ultimate)
+### Epics (9 tools -- requires GitLab Premium/Ultimate)
+
+| Tool | Description | Scope | Write |
+|------|-------------|:-----:|:-----:|
+| `list_epics` | List epics (filter by state, search, labels) | group | -- |
+| `get_epic` | Get epic details by number | group | -- |
+| `create_epic` | Create an epic | group | dry_run |
+| `update_epic` | Update an epic | group | dry_run |
+| `close_epic` | Close an epic | group | dry_run |
+| `list_epic_issues` | List issues linked to an epic | group | -- |
+| `add_issue_to_epic` | Link an issue to an epic | group | dry_run |
+| `list_epic_notes` | List comments on an epic | group | -- |
+| `add_epic_note` | Add a comment to an epic | group | dry_run |
+
+### Issues (7 tools)
+
+| Tool | Description | Scope | Write |
+|------|-------------|:-----:|:-----:|
+| `list_issues` | List issues for a group | group | -- |
+| `get_issue` | Get issue details (with time tracking) | project | -- |
+| `create_issue` | Create an issue | project | dry_run |
+| `update_issue` | Update an issue | project | dry_run |
+| `close_issue` | Close an issue | project | dry_run |
+| `list_issue_notes` | List comments on an issue | project | -- |
+| `add_issue_note` | Add a comment to an issue | project | dry_run |
+
+### Milestones (5 tools)
+
+| Tool | Description | Scope | Write |
+|------|-------------|:-----:|:-----:|
+| `list_milestones` | List milestones for a group | group | -- |
+| `get_milestone` | Get milestone details | group | -- |
+| `create_milestone` | Create a milestone | group | dry_run |
+| `update_milestone` | Update a milestone | group | dry_run |
+| `close_milestone` | Close a milestone | group | dry_run |
+
+### Merge Requests (2 tools)
+
+| Tool | Description | Scope | Write |
+|------|-------------|:-----:|:-----:|
+| `list_merge_requests` | List merge requests for a group | group | -- |
+| `get_merge_request` | Get merge request details | project | -- |
+
+### Utilities (6 tools)
+
+| Tool | Description | Scope | Write |
+|------|-------------|:-----:|:-----:|
+| `list_groups` | Discover accessible groups | -- | -- |
+| `list_projects` | List projects in a group | group | -- |
+| `list_group_members` | List members of a group | group | -- |
+| `list_labels` | List labels for a group | group | -- |
+| `list_boards` | List issue boards for a group | group | -- |
+| `get_current_user` | Check connection (current user info) | -- | -- |
+
+## Example prompts
+
+- *"List my GitLab groups"*
+- *"Show open epics in group 42"*
+- *"List issues labeled `bug` in the wanadev group"*
+- *"Create an epic called 'Homepage Redesign' in group 42 with a deadline of April 30"*
+- *"Which issues are linked to epic #5 in the wanadev group?"*
+- *"Close issue #15 in project 789"*
+- *"Who are the members of the wanadev group?"*
+- *"Show me all open merge requests in group 42"*
+- *"How much time has been spent on issue #23 in project 456?"*
+- *"Add a comment on epic #3 in group 42: Specs validated, ready for dev"*
+- *"What milestones are coming up in the wanadev group?"*
+- *"List the boards for group 42"*
+
+## Use cases for project managers
+
+### Sprint planning
+
+> *"List the active milestones in the wanadev group. For each one, show me the open issues and how many are unassigned."*
+
+Claude calls `list_milestones` → `list_issues` per milestone → summarizes the gaps. You see at a glance what's on track and what needs attention.
+
+### Daily standup prep
+
+> *"Show me all open MRs in the kp1 group that have been waiting for review for more than 3 days. Also list any issues that were closed yesterday."*
+
+Claude calls `list_merge_requests` (state: opened) → `list_issues` (state: closed, sort: updated_at) → gives you a ready-made standup brief.
+
+### Epic progress review
+
+> *"Give me a status report on epic #12 in group wanadev: how many issues are done vs. open, what's the total time spent, and list the latest comments."*
+
+Claude chains `get_epic` → `list_epic_issues` → reads `time_stats` from each issue → `list_epic_notes` → returns a structured progress report.
 
 | Tool | Description | `group_id` requis | dry_run |
 |------|-------------|:---:|:---:|
@@ -76,56 +179,38 @@ Cela evite toute modification accidentelle : le LLM montre d'abord ce qu'il va f
 | `list_epic_issues` | Issues rattachees a un epic | Oui | — |
 | `add_issue_to_epic` | Rattacher une issue a un epic | Oui | Oui |
 
-### Issues
+### Cross-group dashboard
 
-| Tool | Description | `group_id` requis | dry_run |
-|------|-------------|:---:|:---:|
-| `list_issues` | Lister les issues d'un groupe | Oui | — |
-| `get_issue` | Details d'une issue (project-scoped) | Non | — |
-| `create_issue` | Creer une issue (project-scoped) | Non | Oui |
-| `update_issue` | Modifier une issue (project-scoped) | Non | Oui |
-| `close_issue` | Fermer une issue (project-scoped) | Non | Oui |
+> *"Compare the open issue count across my three groups: wanadev, kp1, and infra. Which group has the most overdue issues?"*
 
-### Milestones
+Claude calls `list_groups` → `list_issues` for each group with due date filtering → builds a comparison table.
 
-| Tool | Description | `group_id` requis | dry_run |
-|------|-------------|:---:|:---:|
-| `list_milestones` | Lister les milestones d'un groupe | Oui | — |
-| `get_milestone` | Details d'un milestone | Oui | — |
-| `create_milestone` | Creer un milestone | Oui | Oui |
+### Quick issue triage
 
-### Utilitaires
+> *"In the kp1 group, find all issues labeled 'urgent' with no assignee. Assign them to @jean and add a comment saying 'Triaged in weekly review'."*
 
-| Tool | Description | `group_id` requis | dry_run |
-|------|-------------|:---:|:---:|
-| `list_groups` | Decouvrir les groupes accessibles | Non | — |
-| `list_projects` | Lister les projets d'un groupe | Oui | — |
-| `list_group_members` | Lister les membres d'un groupe | Oui | — |
-| `get_current_user` | Verifier la connexion (info utilisateur) | Non | — |
+Claude calls `list_issues` (labels: urgent) → for each unassigned issue, dry-runs `update_issue` (assignee) + `add_issue_note` → shows you the plan → you confirm → done.
 
-## Exemples de prompts
+### Milestone closure
 
-- *"Liste mes groupes GitLab"*
-- *"Liste les epics ouverts du groupe 42"*
-- *"Montre-moi les issues avec le label bug dans le groupe wanadev"*
-- *"Cree un epic 'Refonte homepage' dans le groupe 42 avec une echeance au 30 avril"*
-- *"Quelles issues sont dans l'epic #42 du groupe wanadev ?"*
-- *"Ferme l'issue #15 du projet 789"*
-- *"Qui sont les membres du groupe wanadev ?"*
+> *"Close milestone 'Sprint 14' in group wanadev. Before that, show me any issues still open in it."*
 
-## Developpement
+Claude calls `list_issues` (milestone: Sprint 14, state: opened) → warns you about remaining items → dry-runs `close_milestone` → you confirm.
+
+## Development
 
 ```bash
 git clone https://github.com/wanadev/gitlab-mcp.git
 cd gitlab-mcp
 npm install
 npm run build       # Build ESM (tsc)
-npm run typecheck   # Verification TypeScript
-npm run dev         # Build en mode watch
+npm run typecheck   # TypeScript type checking
+npm run dev         # Build in watch mode
 ```
 
 ## Notes
 
-- **`issue_id` vs `issue_iid`** : pour `add_issue_to_epic`, il faut l'ID global de l'issue (pas le numero affiche dans le projet). Les outils `list_issues` et `list_epic_issues` affichent les deux.
-- **Mode lecture seule** : avec `GITLAB_READ_ONLY=true`, toute tentative de creation/modification retourne une erreur claire.
-- **Erreur 403 sur les epics** : necessite une licence GitLab Premium ou Ultimate.
+- **`issue_id` vs `issue_iid`** -- `add_issue_to_epic` requires the global issue ID (not the `#iid` displayed in the project). Both `list_issues` and `list_epic_issues` return both values.
+- **Read-only mode** -- With `GITLAB_READ_ONLY=true`, any create/update/close attempt returns a clear error.
+- **403 on epics** -- Epic endpoints require a GitLab Premium or Ultimate license.
+- **Multi-group workflow** -- You can work across several groups in a single conversation. The LLM will call `list_groups` to discover them, then pass the right `group_id` to each tool.
