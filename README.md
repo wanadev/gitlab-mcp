@@ -37,6 +37,7 @@ Existing tools like **glab** are developer-oriented: they focus on merge request
 ```
 /plugin marketplace add wanadev/gitlab-mcp
 /plugin install wanadev-gitlab@wanadev-gitlab
+```
 
 Set `GITLAB_TOKEN` in your environment (`.bashrc`, `.zshrc`, or system variable). The plugin will guide you on first launch if it's missing.
 
