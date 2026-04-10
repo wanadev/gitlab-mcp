@@ -2,7 +2,7 @@
   "mcpServers": {
     "gitlab": {
       "command": "npx",
-      "args": ["-y", "@wanadev/mcp-gitlab"],
+      "args": ["-y", "@wanadev/mcp-gitlab@latest"],
       "env": {
         "GITLAB_TOKEN": "${GITLAB_TOKEN}",
         "GITLAB_BASE_URL": "${GITLAB_BASE_URL}",

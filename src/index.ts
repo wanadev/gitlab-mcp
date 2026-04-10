@@ -102,6 +102,24 @@ async function main(): Promise<void> {
   } else if (readOnly) {
     console.error("Read-only mode active (GITLAB_READ_ONLY=true)");
   }
+
+  // Non-blocking update check
+  checkForUpdate(pkg.name, pkg.version).catch(() => {});
+}
+
+async function checkForUpdate(name: string, currentVersion: string): Promise<void> {
+  try {
+    const res = await fetch(`https://registry.npmjs.org/${name}/latest`, {
+      signal: AbortSignal.timeout(3_000),
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as { version: string };
+    if (data.version && data.version !== currentVersion) {
+      console.error(`@wanadev/mcp-gitlab: update available ${currentVersion} → ${data.version} (npx @wanadev/mcp-gitlab@latest)`);
+    }
+  } catch {
+    // Silently ignore — not critical
+  }
 }
 
 main().catch((error) => {
