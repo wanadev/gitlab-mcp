@@ -149,6 +149,44 @@ This prevents accidental changes: the LLM always shows what it intends to do fir
 - *"What milestones are coming up in the wanadev group?"*
 - *"List the boards for group 42"*
 
+## Use cases for project managers
+
+### Sprint planning
+
+> *"List the active milestones in the wanadev group. For each one, show me the open issues and how many are unassigned."*
+
+Claude calls `list_milestones` → `list_issues` per milestone → summarizes the gaps. You see at a glance what's on track and what needs attention.
+
+### Daily standup prep
+
+> *"Show me all open MRs in the kp1 group that have been waiting for review for more than 3 days. Also list any issues that were closed yesterday."*
+
+Claude calls `list_merge_requests` (state: opened) → `list_issues` (state: closed, sort: updated_at) → gives you a ready-made standup brief.
+
+### Epic progress review
+
+> *"Give me a status report on epic #12 in group wanadev: how many issues are done vs. open, what's the total time spent, and list the latest comments."*
+
+Claude chains `get_epic` → `list_epic_issues` → reads `time_stats` from each issue → `list_epic_notes` → returns a structured progress report.
+
+### Cross-group dashboard
+
+> *"Compare the open issue count across my three groups: wanadev, kp1, and infra. Which group has the most overdue issues?"*
+
+Claude calls `list_groups` → `list_issues` for each group with due date filtering → builds a comparison table.
+
+### Quick issue triage
+
+> *"In the kp1 group, find all issues labeled 'urgent' with no assignee. Assign them to @jean and add a comment saying 'Triaged in weekly review'."*
+
+Claude calls `list_issues` (labels: urgent) → for each unassigned issue, dry-runs `update_issue` (assignee) + `add_issue_note` → shows you the plan → you confirm → done.
+
+### Milestone closure
+
+> *"Close milestone 'Sprint 14' in group wanadev. Before that, show me any issues still open in it."*
+
+Claude calls `list_issues` (milestone: Sprint 14, state: opened) → warns you about remaining items → dry-runs `close_milestone` → you confirm.
+
 ## Development
 
 ```bash
