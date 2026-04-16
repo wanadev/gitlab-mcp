@@ -12,6 +12,7 @@ import { registerEpicTools } from "./tools/epics.js";
 import { registerIssueTools } from "./tools/issues.js";
 import { registerMilestoneTools } from "./tools/milestones.js";
 import { registerMergeRequestTools } from "./tools/merge_requests.js";
+import { registerCITools } from "./tools/ci.js";
 import { registerUtilTools } from "./tools/utils.js";
 
 const SETUP_MESSAGE = `GITLAB_TOKEN is not set. The GitLab MCP server needs a Personal Access Token to connect.
@@ -90,6 +91,7 @@ async function main(): Promise<void> {
     registerIssueTools(server, client);
     registerMilestoneTools(server, client);
     registerMergeRequestTools(server, client);
+    registerCITools(server, client);
     registerUtilTools(server, client);
   }
 
