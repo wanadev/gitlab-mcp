@@ -346,7 +346,11 @@ export const Q_BOARDS = `
 `;
 
 export const Q_PROJECT_PATH = `
-  query($id: ID!) { project(id: $id) { fullPath } }
+  query($ids: [ID!]!) {
+    projects(ids: $ids) {
+      nodes { id fullPath }
+    }
+  }
 `;
 
 // ---------------------------------------------------------------------------
