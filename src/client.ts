@@ -579,6 +579,155 @@ export class GitLabClient {
     return mapMergeRequest(data.project.mergeRequest, this.baseUrl);
   }
 
+  async createMergeRequest(projectId: number, data: {
+    source_branch: string;
+    target_branch: string;
+    title: string;
+    description?: string;
+    labels?: string;
+    assignee_ids?: number[];
+    reviewer_ids?: number[];
+    milestone_id?: number;
+  }): Promise<GitLabMergeRequest> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/merge_requests`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as GitLabMergeRequest;
+  }
+
+  async updateMergeRequest(projectId: number, mrIid: number, data: {
+    title?: string;
+    description?: string;
+    add_labels?: string;
+    remove_labels?: string;
+    assignee_ids?: number[];
+    reviewer_ids?: number[];
+    milestone_id?: number;
+    target_branch?: string;
+  }): Promise<GitLabMergeRequest> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/merge_requests/${mrIid}`, this.baseUrl);
+    const body: Record<string, unknown> = {};
+    if (data.title) body.title = data.title;
+    if (data.description) body.description = data.description;
+    if (data.add_labels) body.add_labels = data.add_labels;
+    if (data.remove_labels) body.remove_labels = data.remove_labels;
+    if (data.assignee_ids) body.assignee_ids = data.assignee_ids;
+    if (data.reviewer_ids) body.reviewer_ids = data.reviewer_ids;
+    if (data.milestone_id) body.milestone_id = data.milestone_id;
+    if (data.target_branch) body.target_branch = data.target_branch;
+    const response = await fetch(url.toString(), {
+      method: "PUT",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as GitLabMergeRequest;
+  }
+
+  async mergeMergeRequest(projectId: number, mrIid: number, params?: {
+    merge_commit_message?: string;
+    squash?: boolean;
+    should_remove_source_branch?: boolean;
+  }): Promise<GitLabMergeRequest> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/merge_requests/${mrIid}/merge`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "PUT",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify(params ?? {}),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as GitLabMergeRequest;
+  }
+
+  async approveMergeRequest(projectId: number, mrIid: number): Promise<void> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/merge_requests/${mrIid}/approve`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+  }
+
+  async listMRNotes(projectId: number, mrIid: number): Promise<GitLabNote[]> {
+    const projectPath = await this.resolveProjectPath(projectId);
+    const query = Q_ISSUE_NOTES
+      .replace("$issueIid: String!", "$mrIid: String!")
+      .replace("issue(iid: $issueIid)", "mergeRequest(iid: $mrIid)")
+      .replace("issue {", "mergeRequest {");
+    return this.graphqlPaginate(
+      query,
+      { projectPath, mrIid: String(mrIid) },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (d: any) => d.project?.mergeRequest?.notes,
+      mapNote,
+    );
+  }
+
+  async addMRNote(projectId: number, mrIid: number, body: string): Promise<GitLabNote> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    // REST — simpler than resolving MR GID for createNote mutation
+    const url = new URL(`/api/v4/projects/${projectId}/merge_requests/${mrIid}/notes`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as GitLabNote;
+  }
+
+  async getMRDiff(projectId: number, mrIid: number): Promise<{ old_path: string; new_path: string; additions: number; deletions: number }[]> {
+    // REST — diffStats not easily available via GraphQL
+    const url = new URL(`/api/v4/projects/${projectId}/merge_requests/${mrIid}/changes`, this.baseUrl);
+    url.searchParams.set("access_raw_diffs", "false");
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = (await response.json()) as any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (data.changes ?? []).map((c: any) => ({
+      old_path: c.old_path,
+      new_path: c.new_path,
+      additions: (c.diff?.match(/^\+/gm)?.length ?? 0),
+      deletions: (c.diff?.match(/^-/gm)?.length ?? 0),
+    }));
+  }
+
   // ---------------------------------------------------------------------------
   // Milestones
   // ---------------------------------------------------------------------------

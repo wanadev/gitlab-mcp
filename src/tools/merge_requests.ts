@@ -1,7 +1,17 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
-import type { GitLabMergeRequest } from "../types.js";
+import type { GitLabMergeRequest, GitLabNote } from "../types.js";
+
+const dryRunSchema = z.boolean().default(true).describe("Dry run mode (default: true). When true, returns a preview of the action without executing it. Set to false only after user confirmation.");
+
+function dryRunResponse(action: string, details: Record<string, unknown>): { content: { type: "text"; text: string }[] } {
+  const lines = Object.entries(details)
+    .filter(([, v]) => v !== undefined)
+    .map(([k, v]) => `  - **${k}:** ${Array.isArray(v) ? v.join(", ") : v}`);
+  const text = `[DRY RUN] ${action}\n\n${lines.join("\n")}\n\nThis is a preview. Ask the user to confirm in their language before re-calling with dry_run=false.`;
+  return { content: [{ type: "text" as const, text }] };
+}
 
 const groupIdSchema = z.string().describe("ID ou chemin URL du groupe GitLab (ex: '42' ou 'wanadev/kp1'). Si vous n'avez que le nom, appelez d'abord list_groups pour trouver le chemin exact.");
 
@@ -93,6 +103,163 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
         content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }],
         isError: true,
       };
+    }
+  });
+
+  server.registerTool("create_merge_request", {
+    description: "Create a new merge request. dry_run=true by default.",
+    inputSchema: {
+      project_id: z.number().describe("Project ID"),
+      source_branch: z.string().describe("Source branch name"),
+      target_branch: z.string().describe("Target branch name"),
+      title: z.string().describe("MR title"),
+      description: z.string().optional().describe("MR description (Markdown)"),
+      labels: z.string().optional().describe("Labels (comma-separated)"),
+      assignee_ids: z.array(z.number()).optional().describe("Assignee user IDs"),
+      reviewer_ids: z.array(z.number()).optional().describe("Reviewer user IDs"),
+      milestone_id: z.number().optional().describe("Milestone ID"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      const { project_id, dry_run, ...data } = args;
+      if (dry_run) return dryRunResponse("Create merge request", { project_id, ...data });
+      const mr = await client.createMergeRequest(project_id, data);
+      return { content: [{ type: "text" as const, text: `MR created!\n\n${formatMRDetail(mr)}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("update_merge_request", {
+    description: "Update a merge request (title, description, labels, assignees, reviewers). dry_run=true by default.",
+    inputSchema: {
+      project_id: z.number().describe("Project ID"),
+      mr_iid: z.number().describe("MR IID"),
+      title: z.string().optional().describe("New title"),
+      description: z.string().optional().describe("New description (Markdown)"),
+      add_labels: z.string().optional().describe("Labels to add (comma-separated)"),
+      remove_labels: z.string().optional().describe("Labels to remove (comma-separated)"),
+      assignee_ids: z.array(z.number()).optional().describe("Assignee user IDs"),
+      reviewer_ids: z.array(z.number()).optional().describe("Reviewer user IDs"),
+      milestone_id: z.number().optional().describe("Milestone ID"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      const { project_id, mr_iid, dry_run, ...data } = args;
+      if (dry_run) return dryRunResponse("Update merge request", { project_id, mr_iid, ...data });
+      const mr = await client.updateMergeRequest(project_id, mr_iid, data);
+      return { content: [{ type: "text" as const, text: `MR updated!\n\n${formatMRDetail(mr)}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("merge_merge_request", {
+    description: "Merge a merge request. dry_run=true by default.",
+    inputSchema: {
+      project_id: z.number().describe("Project ID"),
+      mr_iid: z.number().describe("MR IID to merge"),
+      merge_commit_message: z.string().optional().describe("Custom merge commit message"),
+      squash: z.boolean().optional().describe("Squash commits into one"),
+      should_remove_source_branch: z.boolean().optional().describe("Delete source branch after merge"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) return dryRunResponse("Merge MR", { project_id: args.project_id, mr_iid: args.mr_iid, squash: args.squash, remove_branch: args.should_remove_source_branch });
+      const mr = await client.mergeMergeRequest(args.project_id, args.mr_iid, {
+        merge_commit_message: args.merge_commit_message,
+        squash: args.squash,
+        should_remove_source_branch: args.should_remove_source_branch,
+      });
+      return { content: [{ type: "text" as const, text: `MR !${mr.iid} merged.\n\n${formatMRDetail(mr)}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("approve_merge_request", {
+    description: "Approve a merge request. dry_run=true by default.",
+    inputSchema: {
+      project_id: z.number().describe("Project ID"),
+      mr_iid: z.number().describe("MR IID to approve"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) return dryRunResponse("Approve MR", { project_id: args.project_id, mr_iid: args.mr_iid });
+      await client.approveMergeRequest(args.project_id, args.mr_iid);
+      return { content: [{ type: "text" as const, text: `MR !${args.mr_iid} approved.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("list_mr_notes", {
+    description: "List comments on a merge request.",
+    inputSchema: {
+      project_id: z.number().describe("Project ID"),
+      mr_iid: z.number().describe("MR IID"),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const notes = await client.listMRNotes(args.project_id, args.mr_iid);
+      const userNotes = notes.filter((n: GitLabNote) => !n.system);
+      if (userNotes.length === 0) return { content: [{ type: "text" as const, text: "No comments on this MR." }] };
+      const text = userNotes.map((n: GitLabNote) =>
+        `**${n.author.name}** (@${n.author.username}) — ${n.created_at}\n${n.body}`
+      ).join("\n\n---\n\n");
+      return { content: [{ type: "text" as const, text: `${userNotes.length} comment(s):\n\n${text}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("add_mr_note", {
+    description: "Add a comment to a merge request. dry_run=true by default.",
+    inputSchema: {
+      project_id: z.number().describe("Project ID"),
+      mr_iid: z.number().describe("MR IID"),
+      body: z.string().describe("Comment body (Markdown)"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) return dryRunResponse("Comment on MR", { project_id: args.project_id, mr_iid: args.mr_iid, body: args.body });
+      const note = await client.addMRNote(args.project_id, args.mr_iid, args.body);
+      return { content: [{ type: "text" as const, text: `Comment added on MR !${args.mr_iid} by @${note.author.username}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("get_mr_diff", {
+    description: "Get the file changes (diff summary) of a merge request.",
+    inputSchema: {
+      project_id: z.number().describe("Project ID"),
+      mr_iid: z.number().describe("MR IID"),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const changes = await client.getMRDiff(args.project_id, args.mr_iid);
+      if (changes.length === 0) return { content: [{ type: "text" as const, text: "No file changes in this MR." }] };
+      const text = changes.map(c => {
+        const path = c.old_path === c.new_path ? c.new_path : `${c.old_path} → ${c.new_path}`;
+        return `**${path}** (+${c.additions} -${c.deletions})`;
+      }).join("\n");
+      const total = changes.reduce((acc, c) => ({ add: acc.add + c.additions, del: acc.del + c.deletions }), { add: 0, del: 0 });
+      return { content: [{ type: "text" as const, text: `${changes.length} file(s) changed (+${total.add} -${total.del}):\n\n${text}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
     }
   });
 }
