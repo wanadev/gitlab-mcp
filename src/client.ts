@@ -580,14 +580,17 @@ export class GitLabClient {
   }
 
   async getMilestone(groupId: string, milestoneId: number): Promise<GitLabMilestone> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data = await this.graphql<any>(Q_MILESTONE, {
-      fullPath: groupId,
-      ids: [toGid("Milestone", milestoneId)],
+    // REST fallback — GraphQL milestones(ids:) has type mismatch bugs on GitLab 18.x
+    const url = new URL(`/api/v4/groups/${encodeURIComponent(groupId)}/milestones/${milestoneId}`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(15_000),
     });
-    const node = data.group?.milestones?.nodes?.[0];
-    if (!node) throw new Error(`Milestone ${milestoneId} not found in group ${groupId}`);
-    return mapMilestone(node, this.baseUrl);
+    if (!response.ok) {
+      throw new Error(`Milestone ${milestoneId} not found in group ${groupId}`);
+    }
+    return (await response.json()) as GitLabMilestone;
   }
 
   async createMilestone(groupId: string, data: {
