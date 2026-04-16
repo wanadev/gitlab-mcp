@@ -475,22 +475,20 @@ export const Q_WORK_ITEM_ID = `
 `;
 
 export const Q_WORK_ITEM_WIDGETS = `
-  query($fullPath: ID!, $iid: ID!) {
-    group(fullPath: $fullPath) {
-      epic(iid: $iid) {
-        id iid title webUrl
-        widgets {
-          type
-          ... on WorkItemWidgetHealthStatus { healthStatus }
-          ... on WorkItemWidgetProgress { progress currentValue }
-          ... on WorkItemWidgetMilestone { milestone { id title } }
-          ... on WorkItemWidgetIteration { iteration { id title startDate dueDate } }
-          ... on WorkItemWidgetLinkedItems {
-            linkedItems(first: 100) {
-              nodes {
-                linkType
-                workItem { id title state webUrl workItemType { name } }
-              }
+  query($id: WorkItemID!) {
+    workItem(id: $id) {
+      id title webUrl
+      widgets {
+        type
+        ... on WorkItemWidgetHealthStatus { healthStatus }
+        ... on WorkItemWidgetProgress { progress currentValue }
+        ... on WorkItemWidgetMilestone { milestone { id title } }
+        ... on WorkItemWidgetIteration { iteration { id title startDate dueDate } }
+        ... on WorkItemWidgetLinkedItems {
+          linkedItems(first: 100) {
+            nodes {
+              linkType
+              workItem { id title state webUrl workItemType { name } }
             }
           }
         }
