@@ -226,7 +226,7 @@ export class GitLabClient {
       title: data.title,
     };
     if (data.description) input.description = data.description;
-    if (data.labels) input.addLabelIds = data.labels.split(",").map(s => s.trim());
+    if (data.labels) input.addLabels = data.labels.split(",").map(s => s.trim());
     if (data.start_date) input.startDateFixed = data.start_date;
     if (data.due_date) input.dueDateFixed = data.due_date;
 
@@ -240,7 +240,8 @@ export class GitLabClient {
     data: {
       title?: string;
       description?: string;
-      labels?: string;
+      add_labels?: string;
+      remove_labels?: string;
       start_date?: string;
       due_date?: string;
       state_event?: string;
@@ -253,7 +254,8 @@ export class GitLabClient {
     };
     if (data.title) input.title = data.title;
     if (data.description) input.description = data.description;
-    if (data.labels) input.addLabelIds = data.labels.split(",").map(s => s.trim());
+    if (data.add_labels) input.addLabels = data.add_labels.split(",").map(s => s.trim());
+    if (data.remove_labels) input.removeLabels = data.remove_labels.split(",").map(s => s.trim());
     if (data.start_date) input.startDateFixed = data.start_date;
     if (data.due_date) input.dueDateFixed = data.due_date;
     if (data.state_event === "close") input.stateEvent = "CLOSE";
