@@ -156,8 +156,8 @@ export class GitLabClient {
     if (cached) return cached;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data = await this.graphql<any>(Q_PROJECT_PATH, { id: toGid("Project", projectId) });
-    const fullPath = data.project?.fullPath;
+    const data = await this.graphql<any>(Q_PROJECT_PATH, { ids: [toGid("Project", projectId)] });
+    const fullPath = data.projects?.nodes?.[0]?.fullPath;
     if (!fullPath) throw new Error(`Project ${projectId} not found`);
 
     this.projectPathCache.set(projectId, fullPath);
