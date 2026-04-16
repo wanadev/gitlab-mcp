@@ -203,6 +203,96 @@ export function registerUtilTools(server: McpServer, client: GitLabClient): void
     }
   });
 
+  server.registerTool("create_label", {
+    description: "Create a label in a group. dry_run=true by default.",
+    inputSchema: {
+      group_id: groupIdSchema,
+      name: z.string().describe("Label name"),
+      color: z.string().describe("Label color (hex, e.g. '#FF0000')"),
+      description: z.string().optional().describe("Label description"),
+      dry_run: z.boolean().default(true).describe("Dry run mode (default: true)."),
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        const lines = [`  - **name:** ${args.name}`, `  - **color:** ${args.color}`];
+        if (args.description) lines.push(`  - **description:** ${args.description}`);
+        return { content: [{ type: "text" as const, text: `[DRY RUN] Create label\n\n${lines.join("\n")}\n\nThis is a preview. Ask the user to confirm in their language before re-calling with dry_run=false.` }] };
+      }
+      const label = await client.createLabel(args.group_id, { name: args.name, color: args.color, description: args.description });
+      return { content: [{ type: "text" as const, text: `Label "${label.name}" created (${label.color}).` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("update_label", {
+    description: "Update a label in a group. dry_run=true by default.",
+    inputSchema: {
+      group_id: groupIdSchema,
+      label_id: z.number().describe("Label ID"),
+      new_name: z.string().optional().describe("New label name"),
+      color: z.string().optional().describe("New color (hex)"),
+      description: z.string().optional().describe("New description"),
+      dry_run: z.boolean().default(true).describe("Dry run mode (default: true)."),
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        const details: Record<string, unknown> = { label_id: args.label_id };
+        if (args.new_name) details.new_name = args.new_name;
+        if (args.color) details.color = args.color;
+        if (args.description) details.description = args.description;
+        const lines = Object.entries(details).map(([k, v]) => `  - **${k}:** ${v}`);
+        return { content: [{ type: "text" as const, text: `[DRY RUN] Update label\n\n${lines.join("\n")}\n\nThis is a preview. Ask the user to confirm in their language before re-calling with dry_run=false.` }] };
+      }
+      const { group_id, label_id, dry_run, ...data } = args;
+      const label = await client.updateLabel(group_id, label_id, data);
+      return { content: [{ type: "text" as const, text: `Label "${label.name}" updated.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("delete_label", {
+    description: "Delete a label from a group. dry_run=true by default. This is destructive and cannot be undone.",
+    inputSchema: {
+      group_id: groupIdSchema,
+      label_id: z.number().describe("Label ID to delete"),
+      dry_run: z.boolean().default(true).describe("Dry run mode (default: true)."),
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        return { content: [{ type: "text" as const, text: `[DRY RUN] Delete label ${args.label_id} from group ${args.group_id}\n\nThis is a preview. Ask the user to confirm in their language before re-calling with dry_run=false.` }] };
+      }
+      await client.deleteLabel(args.group_id, args.label_id);
+      return { content: [{ type: "text" as const, text: `Label ${args.label_id} deleted.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("search_users", {
+    description: "Search for GitLab users globally by name or username.",
+    inputSchema: {
+      query: z.string().describe("Search query (name or username)"),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const users = await client.searchUsers(args.query);
+      if (users.length === 0) return { content: [{ type: "text" as const, text: "No users found." }] };
+      const text = users.map(u => `**${u.name}** (@${u.username}) — ID: ${u.id}\n  ${u.web_url}`).join("\n\n");
+      return { content: [{ type: "text" as const, text: `${users.length} user(s):\n\n${text}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
   server.registerTool("get_current_user", {
     description:
       "Obtenir les informations de l'utilisateur connecte (verifie que le token fonctionne).",

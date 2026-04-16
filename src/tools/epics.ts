@@ -184,6 +184,26 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
     }
   });
 
+  server.registerTool("reopen_epic", {
+    description: "Reopen a closed epic. dry_run=true by default.",
+    inputSchema: {
+      group_id: groupIdSchema,
+      epic_iid: z.number().describe("Epic IID to reopen"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        return dryRunResponse("Reopen epic", { group: args.group_id, epic_iid: args.epic_iid });
+      }
+      const epic = await client.reopenEpic(args.group_id, args.epic_iid);
+      return { content: [{ type: "text" as const, text: `Epic #${epic.iid} reopened.\n\n${formatEpicDetail(epic)}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
   server.registerTool("list_epic_issues", {
     description:
       "Lister les issues rattachees a un epic. Affiche l'ID global et le IID projet de chaque issue.",

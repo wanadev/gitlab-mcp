@@ -145,7 +145,8 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
       issue_iid: z.number().describe("Numero de l'issue (IID)"),
       title: z.string().optional().describe("Nouveau titre"),
       description: z.string().optional().describe("Nouvelle description (Markdown)"),
-      labels: z.string().optional().describe("Nouveaux labels (separes par virgule)"),
+      add_labels: z.string().optional().describe("Labels to add (comma-separated). Does NOT remove existing labels."),
+      remove_labels: z.string().optional().describe("Labels to remove (comma-separated)."),
       milestone_id: z.number().optional().describe("ID du milestone"),
       assignee_ids: z.array(z.number()).optional().describe("IDs des assignees"),
       due_date: z.string().optional().describe("Nouvelle date d'echeance (YYYY-MM-DD)"),
@@ -194,6 +195,47 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
         content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }],
         isError: true,
       };
+    }
+  });
+
+  server.registerTool("reopen_issue", {
+    description: "Reopen a closed issue. dry_run=true by default.",
+    inputSchema: {
+      project_id: z.number().describe("Project ID"),
+      issue_iid: z.number().describe("Issue IID to reopen"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        return dryRunResponse("Reopen issue", { project_id: args.project_id, issue_iid: args.issue_iid });
+      }
+      const issue = await client.reopenIssue(args.project_id, args.issue_iid);
+      return { content: [{ type: "text" as const, text: `Issue #${issue.iid} reopened.\n\n${formatIssueDetail(issue)}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("list_project_issues", {
+    description: "List issues for a specific project (not group). Filter by state, labels, milestone, assignee.",
+    inputSchema: {
+      project_id: z.number().describe("Project ID"),
+      state: z.enum(["opened", "closed", "all"]).optional().describe("Filter by state"),
+      search: z.string().optional().describe("Search text"),
+      labels: z.string().optional().describe("Labels (comma-separated)"),
+      milestone: z.string().optional().describe("Milestone name"),
+      assignee_username: z.string().optional().describe("Assignee username"),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const { project_id, ...params } = args;
+      const issues = await client.listProjectIssues(project_id, params);
+      return { content: [{ type: "text" as const, text: formatIssues(issues) }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
     }
   });
 
