@@ -259,6 +259,7 @@ export class GitLabClient {
     if (data.start_date) input.startDateFixed = data.start_date;
     if (data.due_date) input.dueDateFixed = data.due_date;
     if (data.state_event === "close") input.stateEvent = "CLOSE";
+    if (data.state_event === "reopen") input.stateEvent = "REOPEN";
 
     const result = await this.mutate(M_UPDATE_EPIC, input, "updateEpic");
     return mapEpic(result.epic);
@@ -467,7 +468,8 @@ export class GitLabClient {
     data: {
       title?: string;
       description?: string;
-      labels?: string;
+      add_labels?: string;
+      remove_labels?: string;
       milestone_id?: number;
       assignee_ids?: number[];
       due_date?: string;
@@ -484,16 +486,36 @@ export class GitLabClient {
     };
     if (data.title) input.title = data.title;
     if (data.description) input.description = data.description;
-    if (data.labels) input.labels = data.labels.split(",").map(s => s.trim());
     if (data.milestone_id) input.milestoneId = toGid("Milestone", data.milestone_id);
     if (data.assignee_ids) input.assigneeIds = data.assignee_ids.map(id => toGid("User", id));
     if (data.due_date) input.dueDate = data.due_date;
     if (data.weight != null) input.weight = data.weight;
     if (data.state_event === "close") input.stateEvent = "CLOSE";
+    if (data.state_event === "reopen") input.stateEvent = "REOPEN";
     if (data.iteration_id) input.iterationId = toGid("Iteration", data.iteration_id);
 
     const result = await this.mutate(M_UPDATE_ISSUE, input, "updateIssue");
-    return mapIssue(result.issue, this.baseUrl);
+    const issue = mapIssue(result.issue, this.baseUrl);
+
+    // add/remove labels via REST (not supported in GraphQL UpdateIssueInput)
+    if (data.add_labels || data.remove_labels) {
+      const restUrl = new URL(`/api/v4/projects/${projectId}/issues/${issueIid}`, this.baseUrl);
+      const restBody: Record<string, string> = {};
+      if (data.add_labels) restBody["add_labels"] = data.add_labels;
+      if (data.remove_labels) restBody["remove_labels"] = data.remove_labels;
+      const restResp = await fetch(restUrl.toString(), {
+        method: "PUT",
+        headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+        body: JSON.stringify(restBody),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!restResp.ok) {
+        const text = await restResp.text().catch(() => "");
+        throw new Error(`Label update failed: ${text.slice(0, 200)}`);
+      }
+      return (await restResp.json()) as GitLabIssue;
+    }
+    return issue;
   }
 
   async closeIssue(projectId: number, issueIid: number): Promise<GitLabIssue> {
@@ -725,6 +747,110 @@ export class GitLabClient {
       (d: any) => d.group?.boards,
       mapBoard,
     );
+  }
+
+  async createLabel(groupId: string, data: {
+    name: string;
+    color: string;
+    description?: string;
+  }): Promise<GitLabLabel> {
+    // REST — GraphQL labelCreate has issues on some GitLab versions
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/groups/${encodeURIComponent(groupId)}/labels`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as GitLabLabel;
+  }
+
+  async updateLabel(groupId: string, labelId: number, data: {
+    new_name?: string;
+    color?: string;
+    description?: string;
+  }): Promise<GitLabLabel> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/groups/${encodeURIComponent(groupId)}/labels/${labelId}`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "PUT",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as GitLabLabel;
+  }
+
+  async deleteLabel(groupId: string, labelId: number): Promise<void> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/groups/${encodeURIComponent(groupId)}/labels/${labelId}`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "DELETE",
+      headers: { "PRIVATE-TOKEN": this.token },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok && response.status !== 204) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+  }
+
+  async listProjectIssues(projectId: number, params?: {
+    state?: string;
+    search?: string;
+    labels?: string;
+    milestone?: string;
+    assignee_username?: string;
+  }): Promise<GitLabIssue[]> {
+    const projectPath = await this.resolveProjectPath(projectId);
+    return this.graphqlPaginate(
+      Q_GROUP_ISSUES.replace("group(fullPath:", "project(fullPath:").replace("group {", "project {"),
+      {
+        fullPath: projectPath,
+        state: params?.state && params.state !== "all" ? params.state : null,
+        search: params?.search ?? null,
+        labelName: params?.labels ? params.labels.split(",").map(s => s.trim()) : null,
+        milestoneTitle: params?.milestone ? [params.milestone] : null,
+        assigneeUsernames: params?.assignee_username ? [params.assignee_username] : null,
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (d: any) => d.project?.issues,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (n: any) => mapIssue(n, this.baseUrl),
+    );
+  }
+
+  async searchUsers(query: string): Promise<GitLabUser[]> {
+    // REST — no good GraphQL equivalent for global user search
+    const url = new URL("/api/v4/users", this.baseUrl);
+    url.searchParams.set("search", query);
+    url.searchParams.set("per_page", "20");
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      throw new Error(`GitLab ${response.status}: user search failed`);
+    }
+    return (await response.json()) as GitLabUser[];
+  }
+
+  async reopenIssue(projectId: number, issueIid: number): Promise<GitLabIssue> {
+    return this.updateIssue(projectId, issueIid, { state_event: "reopen" });
+  }
+
+  async reopenEpic(groupId: string, epicIid: number): Promise<GitLabEpic> {
+    return this.updateEpic(groupId, epicIid, { state_event: "reopen" });
   }
 
   async getCurrentUser(): Promise<GitLabUser> {
