@@ -334,10 +334,11 @@ export class GitLabClient {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async getEpicWidgets(groupId: string, epicIid: number): Promise<any> {
+    const epicGid = await this.resolveEpicGid(groupId, epicIid);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data = await this.graphql<any>(Q_WORK_ITEM_WIDGETS, { fullPath: groupId, iid: String(epicIid) });
-    if (!data.group?.epic) throw new Error(`Epic #${epicIid} not found in group ${groupId}`);
-    return data.group.epic;
+    const data = await this.graphql<any>(Q_WORK_ITEM_WIDGETS, { id: epicGid });
+    if (!data.workItem) throw new Error(`WorkItem for epic #${epicIid} not found`);
+    return data.workItem;
   }
 
   async setEpicMilestone(groupId: string, epicIid: number, milestoneId: number | null): Promise<void> {
