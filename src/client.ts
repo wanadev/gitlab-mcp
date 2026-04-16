@@ -844,6 +844,129 @@ export class GitLabClient {
   }
 
   // ---------------------------------------------------------------------------
+  // CI/CD Pipelines
+  // ---------------------------------------------------------------------------
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async listPipelines(projectId: number, params?: { ref?: string; status?: string }): Promise<any[]> {
+    const url = new URL(`/api/v4/projects/${projectId}/pipelines`, this.baseUrl);
+    url.searchParams.set("per_page", "20");
+    if (params?.ref) url.searchParams.set("ref", params.ref);
+    if (params?.status) url.searchParams.set("status", params.status);
+    const response = await fetch(url.toString(), {
+      method: "GET", headers: { "PRIVATE-TOKEN": this.token }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error(`GitLab ${response.status}`);
+    return (await response.json()) as unknown[];
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async getPipeline(projectId: number, pipelineId: number): Promise<any> {
+    const url = new URL(`/api/v4/projects/${projectId}/pipelines/${pipelineId}`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "GET", headers: { "PRIVATE-TOKEN": this.token }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error(`Pipeline ${pipelineId} not found`);
+    return await response.json();
+  }
+
+  async getJobLog(projectId: number, jobId: number): Promise<string> {
+    const url = new URL(`/api/v4/projects/${projectId}/jobs/${jobId}/trace`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "GET", headers: { "PRIVATE-TOKEN": this.token }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error(`Job ${jobId} log not found`);
+    return await response.text();
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async retryPipeline(projectId: number, pipelineId: number): Promise<any> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/pipelines/${pipelineId}/retry`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "POST", headers: { "PRIVATE-TOKEN": this.token }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) { const t = await response.text().catch(() => ""); throw new Error(`GitLab ${response.status}: ${t.slice(0, 200)}`); }
+    return await response.json();
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async cancelPipeline(projectId: number, pipelineId: number): Promise<any> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/pipelines/${pipelineId}/cancel`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "POST", headers: { "PRIVATE-TOKEN": this.token }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) { const t = await response.text().catch(() => ""); throw new Error(`GitLab ${response.status}: ${t.slice(0, 200)}`); }
+    return await response.json();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Branches & Repository
+  // ---------------------------------------------------------------------------
+
+  async listBranches(projectId: number, params?: { search?: string }): Promise<{ name: string; default: boolean; web_url: string }[]> {
+    const url = new URL(`/api/v4/projects/${projectId}/repository/branches`, this.baseUrl);
+    url.searchParams.set("per_page", "100");
+    if (params?.search) url.searchParams.set("search", params.search);
+    const response = await fetch(url.toString(), {
+      method: "GET", headers: { "PRIVATE-TOKEN": this.token }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error(`GitLab ${response.status}`);
+    return (await response.json()) as { name: string; default: boolean; web_url: string }[];
+  }
+
+  async createBranch(projectId: number, name: string, ref: string): Promise<{ name: string; web_url: string }> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/repository/branches`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "POST", headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify({ branch: name, ref }), signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) { const t = await response.text().catch(() => ""); throw new Error(`GitLab ${response.status}: ${t.slice(0, 200)}`); }
+    return (await response.json()) as { name: string; web_url: string };
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async listRepositoryTree(projectId: number, params?: { path?: string; ref?: string }): Promise<any[]> {
+    const url = new URL(`/api/v4/projects/${projectId}/repository/tree`, this.baseUrl);
+    url.searchParams.set("per_page", "100");
+    if (params?.path) url.searchParams.set("path", params.path);
+    if (params?.ref) url.searchParams.set("ref", params.ref);
+    const response = await fetch(url.toString(), {
+      method: "GET", headers: { "PRIVATE-TOKEN": this.token }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error(`GitLab ${response.status}`);
+    return (await response.json()) as unknown[];
+  }
+
+  async getFile(projectId: number, filePath: string, ref?: string): Promise<{ content: string; file_name: string; file_path: string; size: number }> {
+    const url = new URL(`/api/v4/projects/${projectId}/repository/files/${encodeURIComponent(filePath)}`, this.baseUrl);
+    if (ref) url.searchParams.set("ref", ref);
+    else url.searchParams.set("ref", "main");
+    const response = await fetch(url.toString(), {
+      method: "GET", headers: { "PRIVATE-TOKEN": this.token }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error(`File ${filePath} not found`);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = (await response.json()) as any;
+    return { content: Buffer.from(data.content, "base64").toString("utf-8"), file_name: data.file_name, file_path: data.file_path, size: data.size };
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async listCommits(projectId: number, params?: { ref?: string; path?: string }): Promise<any[]> {
+    const url = new URL(`/api/v4/projects/${projectId}/repository/commits`, this.baseUrl);
+    url.searchParams.set("per_page", "20");
+    if (params?.ref) url.searchParams.set("ref_name", params.ref);
+    if (params?.path) url.searchParams.set("path", params.path);
+    const response = await fetch(url.toString(), {
+      method: "GET", headers: { "PRIVATE-TOKEN": this.token }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error(`GitLab ${response.status}`);
+    return (await response.json()) as unknown[];
+  }
+
+  // ---------------------------------------------------------------------------
   // Utils
   // ---------------------------------------------------------------------------
 
