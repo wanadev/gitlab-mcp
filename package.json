@@ -19,7 +19,8 @@
     "prepack": "tsc",
     "typecheck": "tsc --noEmit",
     "dev": "tsc --watch",
-    "test": "node --test test/smoke.test.mjs"
+    "test": "node --test test/smoke.test.mjs",
+    "test:integration": "node --test test/integration.test.mjs"
   },
   "keywords": [
     "mcp",
