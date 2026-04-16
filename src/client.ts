@@ -12,7 +12,7 @@ import {
   Q_ITERATIONS, Q_PROJECTS, Q_MEMBERS, Q_LABELS, Q_BOARDS, Q_PROJECT_PATH,
   M_CREATE_EPIC, M_UPDATE_EPIC, M_CREATE_MILESTONE, M_UPDATE_MILESTONE,
   M_CREATE_ISSUE, M_UPDATE_ISSUE, M_CREATE_NOTE, M_EPIC_ADD_ISSUE,
-  Q_WORK_ITEM_ID, Q_WORK_ITEM_WIDGETS, Q_ISSUE_WORK_ITEM_ID,
+  Q_EPIC_WORK_ITEM_ID, Q_WORK_ITEM_WIDGETS, Q_ISSUE_WORK_ITEM_ID,
   M_WORK_ITEM_UPDATE, M_WORK_ITEM_ADD_LINKED,
   mapUser, mapEpic, mapIssue, mapMilestone, mapMergeRequest,
   mapGroup, mapProject, mapMember, mapLabel, mapNote, mapBoard, mapIteration,
@@ -282,16 +282,17 @@ export class GitLabClient {
   async addIssueToEpic(
     groupId: string,
     epicIid: number,
-    issueId: number,
-  ): Promise<{ id: number; epic: GitLabEpic; issue: GitLabIssue }> {
-    const epic = await this.getEpic(groupId, epicIid);
+    projectId: number,
+    issueIid: number,
+  ): Promise<void> {
+    const projectPath = await this.resolveProjectPath(projectId);
     const input = {
       iid: String(epicIid),
       groupPath: groupId,
-      issueIid: String(issueId),
+      projectPath,
+      issueIid: String(issueIid),
     };
     await this.mutate(M_EPIC_ADD_ISSUE, input, "epicAddIssue");
-    return { id: 0, epic, issue: {} as GitLabIssue };
   }
 
   async listEpicNotes(groupId: string, epicIid: number): Promise<GitLabNote[]> {
@@ -315,26 +316,30 @@ export class GitLabClient {
   // Work Items (epic widgets: milestone, health status, progress, linked items)
   // ---------------------------------------------------------------------------
 
-  private async resolveEpicGid(groupId: string, epicIid: number): Promise<string> {
+  private async resolveEpicWorkItemGid(groupId: string, epicIid: number): Promise<string> {
+    // Epic GID (gid://gitlab/Epic/N) != WorkItem GID (gid://gitlab/WorkItem/N)
+    // Work Items API needs the WorkItem GID, found via group.workItems(types: EPIC)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data = await this.graphql<any>(Q_WORK_ITEM_ID, { fullPath: groupId, iid: String(epicIid) });
-    const gid = data.group?.epic?.id;
-    if (!gid) throw new Error(`Epic #${epicIid} not found in group ${groupId}`);
+    const data = await this.graphql<any>(Q_EPIC_WORK_ITEM_ID, { fullPath: groupId, iid: String(epicIid) });
+    const gid = data.group?.workItems?.nodes?.[0]?.id;
+    if (!gid) throw new Error(`WorkItem for epic #${epicIid} not found in group ${groupId}`);
     return gid;
   }
 
-  private async resolveIssueGid(projectId: number, issueIid: number): Promise<string> {
+  private async resolveIssueWorkItemGid(projectId: number, issueIid: number): Promise<string> {
     const projectPath = await this.resolveProjectPath(projectId);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = await this.graphql<any>(Q_ISSUE_WORK_ITEM_ID, { projectPath, iid: String(issueIid) });
-    const gid = data.project?.issue?.id;
-    if (!gid) throw new Error(`Issue #${issueIid} not found in project ${projectId}`);
-    return gid;
+    const issueGid = data.project?.issue?.id;
+    if (!issueGid) throw new Error(`Issue #${issueIid} not found in project ${projectId}`);
+    // Convert gid://gitlab/Issue/N to gid://gitlab/WorkItem/N
+    const numericId = issueGid.split("/").pop();
+    return `gid://gitlab/WorkItem/${numericId}`;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async getEpicWidgets(groupId: string, epicIid: number): Promise<any> {
-    const epicGid = await this.resolveEpicGid(groupId, epicIid);
+    const epicGid = await this.resolveEpicWorkItemGid(groupId, epicIid);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = await this.graphql<any>(Q_WORK_ITEM_WIDGETS, { id: epicGid });
     if (!data.workItem) throw new Error(`WorkItem for epic #${epicIid} not found`);
@@ -342,7 +347,7 @@ export class GitLabClient {
   }
 
   async setEpicMilestone(groupId: string, epicIid: number, milestoneId: number | null): Promise<void> {
-    const epicGid = await this.resolveEpicGid(groupId, epicIid);
+    const epicGid = await this.resolveEpicWorkItemGid(groupId, epicIid);
     await this.mutate(M_WORK_ITEM_UPDATE, {
       id: epicGid,
       milestoneWidget: { milestoneId: milestoneId ? toGid("Milestone", milestoneId) : null },
@@ -354,16 +359,16 @@ export class GitLabClient {
     healthStatus: string | null,
   ): Promise<void> {
     const gid = target.type === "epic"
-      ? await this.resolveEpicGid(target.groupId, target.epicIid)
-      : await this.resolveIssueGid(target.projectId, target.issueIid);
+      ? await this.resolveEpicWorkItemGid(target.groupId, target.epicIid)
+      : await this.resolveIssueWorkItemGid(target.projectId, target.issueIid);
     await this.mutate(M_WORK_ITEM_UPDATE, {
       id: gid,
-      healthStatusWidget: { healthStatus: healthStatus?.toUpperCase() ?? null },
+      healthStatusWidget: { healthStatus: healthStatus ?? null },
     }, "workItemUpdate");
   }
 
   async setEpicIteration(groupId: string, epicIid: number, iterationId: number | null): Promise<void> {
-    const epicGid = await this.resolveEpicGid(groupId, epicIid);
+    const epicGid = await this.resolveEpicWorkItemGid(groupId, epicIid);
     await this.mutate(M_WORK_ITEM_UPDATE, {
       id: epicGid,
       iterationWidget: { iterationId: iterationId ? toGid("Iteration", iterationId) : null },
@@ -376,8 +381,8 @@ export class GitLabClient {
     linkType: string,
   ): Promise<void> {
     const sourceGid = sourceTarget.type === "epic"
-      ? await this.resolveEpicGid(sourceTarget.groupId, sourceTarget.epicIid)
-      : await this.resolveIssueGid(sourceTarget.projectId, sourceTarget.issueIid);
+      ? await this.resolveEpicWorkItemGid(sourceTarget.groupId, sourceTarget.epicIid)
+      : await this.resolveIssueWorkItemGid(sourceTarget.projectId, sourceTarget.issueIid);
     await this.mutate(M_WORK_ITEM_ADD_LINKED, {
       id: sourceGid,
       workItemsIds: [linkedGid],
@@ -591,17 +596,23 @@ export class GitLabClient {
     start_date?: string;
     due_date?: string;
   }): Promise<GitLabMilestone> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const input: any = {
-      groupPath: groupId,
-      title: data.title,
-    };
-    if (data.description) input.description = data.description;
-    if (data.start_date) input.startDate = data.start_date;
-    if (data.due_date) input.dueDate = data.due_date;
-
-    const result = await this.mutate(M_CREATE_MILESTONE, input, "createMilestone");
-    return mapMilestone(result.milestone, this.baseUrl);
+    // GraphQL createMilestone has a "Timeout on validation" bug on GitLab 18.x
+    // Fallback to REST API which works reliably
+    if (this.readOnly) {
+      throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true). Impossible d'effectuer une mutation.");
+    }
+    const url = new URL(`/api/v4/groups/${encodeURIComponent(groupId)}/milestones`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as GitLabMilestone;
   }
 
   async updateMilestone(
@@ -615,18 +626,22 @@ export class GitLabClient {
       state_event?: string;
     },
   ): Promise<GitLabMilestone> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const input: any = {
-      id: toGid("Milestone", milestoneId),
-    };
-    if (data.title) input.title = data.title;
-    if (data.description) input.description = data.description;
-    if (data.start_date) input.startDate = data.start_date;
-    if (data.due_date) input.dueDate = data.due_date;
-    if (data.state_event === "close") input.stateEvent = "CLOSE";
-
-    const result = await this.mutate(M_UPDATE_MILESTONE, input, "updateMilestone");
-    return mapMilestone(result.milestone, this.baseUrl);
+    // GraphQL updateMilestone has bugs on GitLab 18.x — fallback to REST
+    if (this.readOnly) {
+      throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true). Impossible d'effectuer une mutation.");
+    }
+    const url = new URL(`/api/v4/groups/${encodeURIComponent(groupId)}/milestones/${milestoneId}`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "PUT",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as GitLabMilestone;
   }
 
   async closeMilestone(groupId: string, milestoneId: number): Promise<GitLabMilestone> {
