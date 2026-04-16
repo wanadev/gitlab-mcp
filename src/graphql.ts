@@ -248,7 +248,7 @@ export const Q_MERGE_REQUESTS = `
           author { ...UserF }
           assignees { nodes { ...UserF } }
           reviewers { nodes { ...UserF } }
-          draft mergeStatusEnum hasConflicts
+          draft mergeStatusEnum conflicts
           createdAt updatedAt mergedAt closedAt
           projectId
         }
@@ -270,7 +270,7 @@ export const Q_MERGE_REQUEST = `
         author { ...UserF }
         assignees { nodes { ...UserF } }
         reviewers { nodes { ...UserF } }
-        draft mergeStatusEnum hasConflicts
+        draft mergeStatusEnum conflicts
         createdAt updatedAt mergedAt closedAt
         projectId
       }
@@ -295,7 +295,7 @@ export const Q_PROJECTS = `
       projects(search: $search, includeSubgroups: $includeSubgroups, first: 100, after: $after) {
         pageInfo { hasNextPage endCursor }
         nodes {
-          id name nameWithNamespace path pathWithNamespace webUrl description
+          id name nameWithNamespace path fullPath webUrl description
           archived
         }
       }
@@ -470,10 +470,12 @@ export const M_EPIC_ADD_ISSUE = `
 
 // --- Work Items mutations ---
 
-export const Q_WORK_ITEM_ID = `
-  query($fullPath: ID!, $iid: ID!) {
+export const Q_EPIC_WORK_ITEM_ID = `
+  query($fullPath: ID!, $iid: String!) {
     group(fullPath: $fullPath) {
-      epic(iid: $iid) { id }
+      workItems(types: EPIC, iid: $iid, first: 1) {
+        nodes { id }
+      }
     }
   }
 `;
@@ -641,7 +643,7 @@ export function mapMergeRequest(n: any, baseUrl: string): GitLabMergeRequest {
     reviewers: n.reviewers?.nodes?.map(mapUser) ?? [],
     draft: n.draft ?? false,
     merge_status: n.mergeStatusEnum ?? n.mergeStatus ?? "",
-    has_conflicts: n.hasConflicts ?? false,
+    has_conflicts: n.conflicts ?? false,
     created_at: n.createdAt ?? "",
     updated_at: n.updatedAt ?? "",
     merged_at: n.mergedAt ?? null,
@@ -668,7 +670,7 @@ export function mapProject(n: any): GitLabProject {
     name: n.name,
     name_with_namespace: n.nameWithNamespace ?? "",
     path: n.path ?? "",
-    path_with_namespace: n.pathWithNamespace ?? "",
+    path_with_namespace: n.fullPath ?? n.pathWithNamespace ?? "",
     web_url: n.webUrl ?? "",
     description: n.description ?? null,
     default_branch: n.repository?.rootRef ?? "main",

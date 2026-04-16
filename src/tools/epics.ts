@@ -210,26 +210,28 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
 
   server.registerTool("add_issue_to_epic", {
     description:
-      "Rattacher une issue a un epic. Par defaut dry_run=true. ATTENTION : utiliser l'ID global de l'issue (pas le IID projet).",
+      "Link an issue to an epic. dry_run=true by default. Requires project_id and issue_iid (not the global issue ID).",
     inputSchema: {
       group_id: groupIdSchema,
-      epic_iid: z.number().describe("Numero de l'epic (IID)"),
-      issue_id: z.number().describe("ID global de l'issue (pas le IID projet)"),
+      epic_iid: z.number().describe("Epic IID"),
+      project_id: z.number().describe("Project ID where the issue lives"),
+      issue_iid: z.number().describe("Issue IID within the project"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
   }, async (args) => {
     try {
       if (args.dry_run) {
-        return dryRunResponse("Rattacher une issue a un epic", {
-          groupe: args.group_id,
+        return dryRunResponse("Link issue to epic", {
+          group: args.group_id,
           epic_iid: args.epic_iid,
-          issue_id: args.issue_id,
+          project_id: args.project_id,
+          issue_iid: args.issue_iid,
         });
       }
-      await client.addIssueToEpic(args.group_id, args.epic_iid, args.issue_id);
+      await client.addIssueToEpic(args.group_id, args.epic_iid, args.project_id, args.issue_iid);
       return {
-        content: [{ type: "text" as const, text: `Issue ${args.issue_id} rattachee a l'epic #${args.epic_iid}.` }],
+        content: [{ type: "text" as const, text: `Issue #${args.issue_iid} linked to epic #${args.epic_iid}.` }],
       };
     } catch (error) {
       return {
