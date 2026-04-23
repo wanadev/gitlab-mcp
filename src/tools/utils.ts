@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
 import type { GitLabProject, GitLabMember, GitLabUser, GitLabGroup, GitLabLabel, GitLabBoard, GitLabIteration } from "../types.js";
+import { idNumber, flagBool, dryRunSchema } from "./schemas.js";
 
 const groupIdSchema = z.string().describe("ID ou chemin URL du groupe GitLab (ex: '42' ou 'wanadev/kp1'). Si vous n'avez que le nom, appelez d'abord list_groups pour trouver le chemin exact.");
 
@@ -53,7 +54,7 @@ function formatGroups(groups: GitLabGroup[]): string {
 function formatLabel(l: GitLabLabel): string {
   const prio = l.priority != null ? ` — Priorite: ${l.priority}` : "";
   const desc = l.description ? ` — ${l.description}` : "";
-  return `**${l.name}** (${l.color}) — ${l.open_issues_count} issues ouvertes, ${l.closed_issues_count} fermees, ${l.open_merge_requests_count} MRs${prio}${desc}`;
+  return `**${l.name}** (id:${l.id}, ${l.color}) — ${l.open_issues_count} issues ouvertes, ${l.closed_issues_count} fermees, ${l.open_merge_requests_count} MRs${prio}${desc}`;
 }
 
 function formatLabels(labels: GitLabLabel[]): string {
@@ -80,7 +81,7 @@ export function registerUtilTools(server: McpServer, client: GitLabClient): void
       "Lister les groupes GitLab accessibles. IMPORTANT : appelez ce tool en premier quand l'utilisateur mentionne un groupe par son nom, pour obtenir le group_id (ID ou full_path) a passer aux autres tools.",
     inputSchema: {
       search: z.string().optional().describe("Recherche textuelle dans le nom du groupe"),
-      top_level_only: z.boolean().optional().describe("Ne retourner que les groupes de premier niveau"),
+      top_level_only: flagBool().optional().describe("Ne retourner que les groupes de premier niveau"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
@@ -210,7 +211,7 @@ export function registerUtilTools(server: McpServer, client: GitLabClient): void
       name: z.string().describe("Label name"),
       color: z.string().describe("Label color (hex, e.g. '#FF0000')"),
       description: z.string().optional().describe("Label description"),
-      dry_run: z.boolean().default(true).describe("Dry run mode (default: true)."),
+      dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
   }, async (args) => {
@@ -231,11 +232,11 @@ export function registerUtilTools(server: McpServer, client: GitLabClient): void
     description: "Update a label in a group. dry_run=true by default.",
     inputSchema: {
       group_id: groupIdSchema,
-      label_id: z.number().describe("Label ID"),
+      label_id: idNumber().describe("Label ID"),
       new_name: z.string().optional().describe("New label name"),
       color: z.string().optional().describe("New color (hex)"),
       description: z.string().optional().describe("New description"),
-      dry_run: z.boolean().default(true).describe("Dry run mode (default: true)."),
+      dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
   }, async (args) => {
@@ -260,8 +261,8 @@ export function registerUtilTools(server: McpServer, client: GitLabClient): void
     description: "Delete a label from a group. dry_run=true by default. This is destructive and cannot be undone.",
     inputSchema: {
       group_id: groupIdSchema,
-      label_id: z.number().describe("Label ID to delete"),
-      dry_run: z.boolean().default(true).describe("Dry run mode (default: true)."),
+      label_id: idNumber().describe("Label ID to delete"),
+      dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
   }, async (args) => {

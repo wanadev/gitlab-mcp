@@ -2,8 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
 import type { GitLabMergeRequest, GitLabNote } from "../types.js";
-
-const dryRunSchema = z.boolean().default(true).describe("Dry run mode (default: true). When true, returns a preview of the action without executing it. Set to false only after user confirmation.");
+import { idNumber, flagBool, dryRunSchema } from "./schemas.js";
 
 function dryRunResponse(action: string, details: Record<string, unknown>): { content: { type: "text"; text: string }[] } {
   const lines = Object.entries(details)
@@ -90,8 +89,8 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
   server.registerTool("get_merge_request", {
     description: "Obtenir les details d'une merge request par son projet et son numero (IID).",
     inputSchema: {
-      project_id: z.number().describe("ID du projet"),
-      mr_iid: z.number().describe("Numero de la merge request (IID)"),
+      project_id: idNumber().describe("ID du projet"),
+      mr_iid: idNumber().describe("Numero de la merge request (IID)"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
@@ -109,15 +108,15 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
   server.registerTool("create_merge_request", {
     description: "Create a new merge request. dry_run=true by default.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
+      project_id: idNumber().describe("Project ID"),
       source_branch: z.string().describe("Source branch name"),
       target_branch: z.string().describe("Target branch name"),
       title: z.string().describe("MR title"),
       description: z.string().optional().describe("MR description (Markdown)"),
       labels: z.string().optional().describe("Labels (comma-separated)"),
-      assignee_ids: z.array(z.number()).optional().describe("Assignee user IDs"),
-      reviewer_ids: z.array(z.number()).optional().describe("Reviewer user IDs"),
-      milestone_id: z.number().optional().describe("Milestone ID"),
+      assignee_ids: z.array(idNumber()).optional().describe("Assignee user IDs"),
+      reviewer_ids: z.array(idNumber()).optional().describe("Reviewer user IDs"),
+      milestone_id: idNumber().optional().describe("Milestone ID"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
@@ -135,15 +134,15 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
   server.registerTool("update_merge_request", {
     description: "Update a merge request (title, description, labels, assignees, reviewers). dry_run=true by default.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
-      mr_iid: z.number().describe("MR IID"),
+      project_id: idNumber().describe("Project ID"),
+      mr_iid: idNumber().describe("MR IID"),
       title: z.string().optional().describe("New title"),
       description: z.string().optional().describe("New description (Markdown)"),
       add_labels: z.string().optional().describe("Labels to add (comma-separated)"),
       remove_labels: z.string().optional().describe("Labels to remove (comma-separated)"),
-      assignee_ids: z.array(z.number()).optional().describe("Assignee user IDs"),
-      reviewer_ids: z.array(z.number()).optional().describe("Reviewer user IDs"),
-      milestone_id: z.number().optional().describe("Milestone ID"),
+      assignee_ids: z.array(idNumber()).optional().describe("Assignee user IDs"),
+      reviewer_ids: z.array(idNumber()).optional().describe("Reviewer user IDs"),
+      milestone_id: idNumber().optional().describe("Milestone ID"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
@@ -161,11 +160,11 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
   server.registerTool("merge_merge_request", {
     description: "Merge a merge request. dry_run=true by default.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
-      mr_iid: z.number().describe("MR IID to merge"),
+      project_id: idNumber().describe("Project ID"),
+      mr_iid: idNumber().describe("MR IID to merge"),
       merge_commit_message: z.string().optional().describe("Custom merge commit message"),
-      squash: z.boolean().optional().describe("Squash commits into one"),
-      should_remove_source_branch: z.boolean().optional().describe("Delete source branch after merge"),
+      squash: flagBool().optional().describe("Squash commits into one"),
+      should_remove_source_branch: flagBool().optional().describe("Delete source branch after merge"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
@@ -186,8 +185,8 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
   server.registerTool("approve_merge_request", {
     description: "Approve a merge request. dry_run=true by default.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
-      mr_iid: z.number().describe("MR IID to approve"),
+      project_id: idNumber().describe("Project ID"),
+      mr_iid: idNumber().describe("MR IID to approve"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
@@ -204,8 +203,8 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
   server.registerTool("list_mr_notes", {
     description: "List comments on a merge request.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
-      mr_iid: z.number().describe("MR IID"),
+      project_id: idNumber().describe("Project ID"),
+      mr_iid: idNumber().describe("MR IID"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
@@ -225,8 +224,8 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
   server.registerTool("add_mr_note", {
     description: "Add a comment to a merge request. dry_run=true by default.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
-      mr_iid: z.number().describe("MR IID"),
+      project_id: idNumber().describe("Project ID"),
+      mr_iid: idNumber().describe("MR IID"),
       body: z.string().describe("Comment body (Markdown)"),
       dry_run: dryRunSchema,
     },
@@ -244,8 +243,8 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
   server.registerTool("get_mr_diff", {
     description: "Get the file changes (diff summary) of a merge request.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
-      mr_iid: z.number().describe("MR IID"),
+      project_id: idNumber().describe("Project ID"),
+      mr_iid: idNumber().describe("MR IID"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {

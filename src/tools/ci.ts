@@ -1,8 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
-
-const dryRunSchema = z.boolean().default(true).describe("Dry run mode (default: true). Set to false only after user confirmation.");
+import { idNumber, dryRunSchema } from "./schemas.js";
 
 function dryRunResponse(action: string, details: Record<string, unknown>): { content: { type: "text"; text: string }[] } {
   const lines = Object.entries(details).filter(([, v]) => v !== undefined).map(([k, v]) => `  - **${k}:** ${v}`);
@@ -16,7 +15,7 @@ export function registerCITools(server: McpServer, client: GitLabClient): void {
   server.registerTool("list_pipelines", {
     description: "List recent pipelines for a project. Filter by branch (ref) or status (running, pending, success, failed, canceled).",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
+      project_id: idNumber().describe("Project ID"),
       ref: z.string().optional().describe("Branch name"),
       status: z.enum(["running", "pending", "success", "failed", "canceled", "skipped", "created", "manual"]).optional().describe("Pipeline status filter"),
     },
@@ -38,8 +37,8 @@ export function registerCITools(server: McpServer, client: GitLabClient): void {
   server.registerTool("get_pipeline", {
     description: "Get details of a specific pipeline (status, duration, jobs).",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
-      pipeline_id: z.number().describe("Pipeline ID"),
+      project_id: idNumber().describe("Project ID"),
+      pipeline_id: idNumber().describe("Pipeline ID"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
@@ -65,8 +64,8 @@ export function registerCITools(server: McpServer, client: GitLabClient): void {
   server.registerTool("get_job_log", {
     description: "Get the log output of a CI job (last 2000 chars).",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
-      job_id: z.number().describe("Job ID"),
+      project_id: idNumber().describe("Project ID"),
+      job_id: idNumber().describe("Job ID"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
@@ -82,8 +81,8 @@ export function registerCITools(server: McpServer, client: GitLabClient): void {
   server.registerTool("retry_pipeline", {
     description: "Retry a failed pipeline. dry_run=true by default.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
-      pipeline_id: z.number().describe("Pipeline ID to retry"),
+      project_id: idNumber().describe("Project ID"),
+      pipeline_id: idNumber().describe("Pipeline ID to retry"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
@@ -100,8 +99,8 @@ export function registerCITools(server: McpServer, client: GitLabClient): void {
   server.registerTool("cancel_pipeline", {
     description: "Cancel a running pipeline. dry_run=true by default.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
-      pipeline_id: z.number().describe("Pipeline ID to cancel"),
+      project_id: idNumber().describe("Project ID"),
+      pipeline_id: idNumber().describe("Pipeline ID to cancel"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
@@ -120,7 +119,7 @@ export function registerCITools(server: McpServer, client: GitLabClient): void {
   server.registerTool("list_branches", {
     description: "List branches of a project. Filter by search term.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
+      project_id: idNumber().describe("Project ID"),
       search: z.string().optional().describe("Search by branch name"),
     },
     annotations: { readOnlyHint: true },
@@ -138,7 +137,7 @@ export function registerCITools(server: McpServer, client: GitLabClient): void {
   server.registerTool("create_branch", {
     description: "Create a new branch from a ref. dry_run=true by default.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
+      project_id: idNumber().describe("Project ID"),
       name: z.string().describe("New branch name"),
       ref: z.string().describe("Source ref (branch, tag, or commit SHA)"),
       dry_run: dryRunSchema,
@@ -159,7 +158,7 @@ export function registerCITools(server: McpServer, client: GitLabClient): void {
   server.registerTool("list_repository_tree", {
     description: "List files and directories in a project repository.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
+      project_id: idNumber().describe("Project ID"),
       path: z.string().optional().describe("Directory path (default: root)"),
       ref: z.string().optional().describe("Branch or tag (default: default branch)"),
     },
@@ -179,7 +178,7 @@ export function registerCITools(server: McpServer, client: GitLabClient): void {
   server.registerTool("get_file", {
     description: "Get the content of a file from the repository.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
+      project_id: idNumber().describe("Project ID"),
       file_path: z.string().describe("File path in repository"),
       ref: z.string().optional().describe("Branch or tag (default: main)"),
     },
@@ -196,7 +195,7 @@ export function registerCITools(server: McpServer, client: GitLabClient): void {
   server.registerTool("list_commits", {
     description: "List recent commits for a project. Filter by branch or file path.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
+      project_id: idNumber().describe("Project ID"),
       ref: z.string().optional().describe("Branch or tag"),
       path: z.string().optional().describe("File path to filter commits"),
     },

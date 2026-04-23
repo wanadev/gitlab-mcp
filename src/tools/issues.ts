@@ -2,8 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
 import type { GitLabIssue, GitLabNote } from "../types.js";
-
-const dryRunSchema = z.boolean().default(true).describe("Dry run mode (default: true). When true, returns a preview of the action without executing it. Set to false only after user confirmation.");
+import { idNumber, dryRunSchema } from "./schemas.js";
 
 function dryRunResponse(action: string, details: Record<string, unknown>): { content: { type: "text"; text: string }[] } {
   const lines = Object.entries(details)
@@ -87,8 +86,8 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
     description:
       "Obtenir les details d'une issue par son projet et son numero (IID).",
     inputSchema: {
-      project_id: z.number().describe("ID du projet"),
-      issue_iid: z.number().describe("Numero de l'issue dans le projet (IID)"),
+      project_id: idNumber().describe("ID du projet"),
+      issue_iid: idNumber().describe("Numero de l'issue dans le projet (IID)"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
@@ -106,16 +105,16 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
   server.registerTool("create_issue", {
     description: "Creer une nouvelle issue dans un projet. Par defaut dry_run=true : retourne un apercu sans creer. Passer dry_run=false apres confirmation.",
     inputSchema: {
-      project_id: z.number().describe("ID du projet"),
+      project_id: idNumber().describe("ID du projet"),
       title: z.string().describe("Titre de l'issue"),
       description: z.string().optional().describe("Description (Markdown)"),
       labels: z.string().optional().describe("Labels (separes par virgule)"),
-      milestone_id: z.number().optional().describe("ID du milestone"),
-      assignee_ids: z.array(z.number()).optional().describe("IDs des assignees"),
+      milestone_id: idNumber().optional().describe("ID du milestone"),
+      assignee_ids: z.array(idNumber()).optional().describe("IDs des assignees"),
       due_date: z.string().optional().describe("Date d'echeance (YYYY-MM-DD)"),
-      weight: z.number().optional().describe("Poids de l'issue"),
-      epic_id: z.number().optional().describe("ID global de l'epic a rattacher"),
-      iteration_id: z.number().optional().describe("ID de l'iteration (sprint) a associer"),
+      weight: idNumber().optional().describe("Poids de l'issue"),
+      epic_id: idNumber().optional().describe("ID global de l'epic a rattacher"),
+      iteration_id: idNumber().optional().describe("ID de l'iteration (sprint) a associer"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
@@ -141,17 +140,17 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
     description:
       "Mettre a jour une issue existante. Par defaut dry_run=true : retourne un apercu sans modifier. Passer dry_run=false apres confirmation.",
     inputSchema: {
-      project_id: z.number().describe("ID du projet"),
-      issue_iid: z.number().describe("Numero de l'issue (IID)"),
+      project_id: idNumber().describe("ID du projet"),
+      issue_iid: idNumber().describe("Numero de l'issue (IID)"),
       title: z.string().optional().describe("Nouveau titre"),
       description: z.string().optional().describe("Nouvelle description (Markdown)"),
       add_labels: z.string().optional().describe("Labels to add (comma-separated). Does NOT remove existing labels."),
       remove_labels: z.string().optional().describe("Labels to remove (comma-separated)."),
-      milestone_id: z.number().optional().describe("ID du milestone"),
-      assignee_ids: z.array(z.number()).optional().describe("IDs des assignees"),
+      milestone_id: idNumber().optional().describe("ID du milestone"),
+      assignee_ids: z.array(idNumber()).optional().describe("IDs des assignees"),
       due_date: z.string().optional().describe("Nouvelle date d'echeance (YYYY-MM-DD)"),
-      weight: z.number().optional().describe("Nouveau poids"),
-      iteration_id: z.number().optional().describe("ID de l'iteration (sprint) a associer"),
+      weight: idNumber().optional().describe("Nouveau poids"),
+      iteration_id: idNumber().optional().describe("ID de l'iteration (sprint) a associer"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
@@ -176,8 +175,8 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
   server.registerTool("close_issue", {
     description: "Fermer une issue. Par defaut dry_run=true : retourne un apercu sans fermer. Passer dry_run=false apres confirmation.",
     inputSchema: {
-      project_id: z.number().describe("ID du projet"),
-      issue_iid: z.number().describe("Numero de l'issue (IID) a fermer"),
+      project_id: idNumber().describe("ID du projet"),
+      issue_iid: idNumber().describe("Numero de l'issue (IID) a fermer"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
@@ -201,8 +200,8 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
   server.registerTool("reopen_issue", {
     description: "Reopen a closed issue. dry_run=true by default.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
-      issue_iid: z.number().describe("Issue IID to reopen"),
+      project_id: idNumber().describe("Project ID"),
+      issue_iid: idNumber().describe("Issue IID to reopen"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
@@ -221,7 +220,7 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
   server.registerTool("list_project_issues", {
     description: "List issues for a specific project (not group). Filter by state, labels, milestone, assignee.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
+      project_id: idNumber().describe("Project ID"),
       state: z.enum(["opened", "closed", "all"]).optional().describe("Filter by state"),
       search: z.string().optional().describe("Search text"),
       labels: z.string().optional().describe("Labels (comma-separated)"),
@@ -242,8 +241,8 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
   server.registerTool("list_issue_notes", {
     description: "Lister les commentaires d'une issue.",
     inputSchema: {
-      project_id: z.number().describe("ID du projet"),
-      issue_iid: z.number().describe("Numero de l'issue (IID)"),
+      project_id: idNumber().describe("ID du projet"),
+      issue_iid: idNumber().describe("Numero de l'issue (IID)"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
@@ -268,8 +267,8 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
   server.registerTool("add_issue_note", {
     description: "Ajouter un commentaire sur une issue. Par defaut dry_run=true.",
     inputSchema: {
-      project_id: z.number().describe("ID du projet"),
-      issue_iid: z.number().describe("Numero de l'issue (IID)"),
+      project_id: idNumber().describe("ID du projet"),
+      issue_iid: idNumber().describe("Numero de l'issue (IID)"),
       body: z.string().describe("Contenu du commentaire (Markdown)"),
       dry_run: dryRunSchema,
     },
