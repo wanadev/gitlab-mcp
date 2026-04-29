@@ -190,7 +190,7 @@ Claude calls `list_milestones` → `list_issues` per milestone → summarizes th
 
 ### Daily standup prep
 
-> *"Show me all open MRs in the kp1 group that have been waiting for review for more than 3 days. Also list any issues that were closed yesterday."*
+> *"Show me all open MRs in the [project] group that have been waiting for review for more than 3 days. Also list any issues that were closed yesterday."*
 
 Claude calls `list_merge_requests` (state: opened) → `list_issues` (state: closed, sort: updated_at) → gives you a ready-made standup brief.
 
@@ -202,13 +202,13 @@ Claude chains `get_epic` → `list_epic_issues` → reads `time_stats` from each
 
 ### Cross-group dashboard
 
-> *"Compare the open issue count across my three groups: wanadev, kp1, and infra. Which group has the most overdue issues?"*
+> *"Compare the open issue count across my three groups: wanadev, [project], and infra. Which group has the most overdue issues?"*
 
 Claude calls `list_groups` → `list_issues` for each group with due date filtering → builds a comparison table.
 
 ### Quick issue triage
 
-> *"In the kp1 group, find all issues labeled 'urgent' with no assignee. Assign them to @jean and add a comment saying 'Triaged in weekly review'."*
+> *"In the [project] group, find all issues labeled 'urgent' with no assignee. Assign them to @jean and add a comment saying 'Triaged in weekly review'."*
 
 Claude calls `list_issues` (labels: urgent) → for each unassigned issue, dry-runs `update_issue` (assignee) + `add_issue_note` → shows you the plan → you confirm → done.
 
