@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
 import type { GitLabEpic, GitLabIssue, GitLabNote } from "../types.js";
-import { idNumber, dryRunSchema } from "./schemas.js";
+import { idNumber, dryRunSchema, detectEscapeIssues, formatWarnings, appendEscapeWarnings } from "./schemas.js";
 
 const groupIdSchema = z.string().describe("ID ou chemin URL du groupe GitLab (ex: '42' ou 'wanadev/kp1'). Si vous n'avez que le nom, appelez d'abord list_groups pour trouver le chemin exact.");
 
@@ -10,7 +10,8 @@ function dryRunResponse(action: string, details: Record<string, unknown>): { con
   const lines = Object.entries(details)
     .filter(([, v]) => v !== undefined)
     .map(([k, v]) => `  - **${k}:** ${v}`);
-  const text = `[DRY RUN] ${action}\n\n${lines.join("\n")}\n\nThis is a preview. Ask the user to confirm in their language before re-calling with dry_run=false.`;
+  const warnings = formatWarnings(detectEscapeIssues(details));
+  const text = `[DRY RUN] ${action}\n\n${lines.join("\n")}${warnings}\n\nThis is a preview. Ask the user to confirm in their language before re-calling with dry_run=false.`;
   return { content: [{ type: "text" as const, text }] };
 }
 
@@ -117,7 +118,7 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
       }
       const epic = await client.createEpic(group_id, data);
       return {
-        content: [{ type: "text" as const, text: `Epic cree avec succes !\n\n${formatEpicDetail(epic)}` }],
+        content: [{ type: "text" as const, text: appendEscapeWarnings(`Epic cree avec succes !\n\n${formatEpicDetail(epic)}`, data) }],
       };
     } catch (error) {
       return {
@@ -138,18 +139,23 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
       remove_labels: z.string().optional().describe("Labels to remove (comma-separated)."),
       start_date: z.string().optional().describe("Nouvelle date de debut (YYYY-MM-DD)"),
       due_date: z.string().optional().describe("Nouvelle date d'echeance (YYYY-MM-DD)"),
+      assignee_ids: z.array(idNumber()).optional().describe("Numeric user IDs to assign (replaces current assignees). Routed through workItemUpdate.assigneesWidget — UpdateEpicInput has no assignees field on modern Work Items."),
+      status_id: z.string().optional().describe("Status widget GID (GitLab 17+). Get the valid ids from list_workitem_statuses with work_item_type=EPIC."),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
   }, async (args) => {
     try {
-      const { group_id, epic_iid, dry_run, ...data } = args;
+      const { group_id, epic_iid, dry_run, status_id, ...data } = args;
       if (dry_run) {
-        return dryRunResponse("Modifier l'epic", { groupe: group_id, epic_iid, ...data });
+        return dryRunResponse("Modifier l'epic", { groupe: group_id, epic_iid, ...data, status_id });
       }
       const epic = await client.updateEpic(group_id, epic_iid, data);
+      if (status_id) {
+        await client.setEpicStatus(group_id, epic_iid, status_id);
+      }
       return {
-        content: [{ type: "text" as const, text: `Epic mis a jour !\n\n${formatEpicDetail(epic)}` }],
+        content: [{ type: "text" as const, text: appendEscapeWarnings(`Epic mis a jour !\n\n${formatEpicDetail(epic)}`, data) }],
       };
     } catch (error) {
       return {
@@ -276,7 +282,7 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
         return { content: [{ type: "text" as const, text: "Aucun commentaire sur cet epic." }] };
       }
       const text = userNotes.map((n: GitLabNote) =>
-        `**${n.author.name}** (@${n.author.username}) — ${n.created_at}\n${n.body}`
+        `**${n.author.name}** (@${n.author.username}) — ${n.created_at}\n  note_id: \`${n.global_id}\`\n${n.body}`
       ).join("\n\n---\n\n");
       return { content: [{ type: "text" as const, text: `${userNotes.length} commentaire(s) :\n\n${text}` }] };
     } catch (error) {
@@ -303,13 +309,54 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
       }
       const note = await client.addEpicNote(args.group_id, args.epic_iid, args.body);
       return {
-        content: [{ type: "text" as const, text: `Commentaire ajoute sur l'epic #${args.epic_iid} par @${note.author.username}.` }],
+        content: [{ type: "text" as const, text: appendEscapeWarnings(`Commentaire ajoute sur l'epic #${args.epic_iid} par @${note.author.username}.`, { body: args.body }) }],
       };
     } catch (error) {
       return {
         content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }],
         isError: true,
       };
+    }
+  });
+
+  server.registerTool("update_epic_note", {
+    description: "Edit the body of an existing epic note. Get note_id from list_epic_notes. dry_run=true by default.",
+    inputSchema: {
+      note_id: z.string().describe("Note global ID (e.g. gid://gitlab/Note/123 or gid://gitlab/DiscussionNote/123). Returned by list_epic_notes."),
+      body: z.string().describe("New note body (Markdown). Replaces the existing content entirely."),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        return dryRunResponse("Update epic note", { note_id: args.note_id, body: args.body });
+      }
+      const note = await client.updateNote(args.note_id, args.body);
+      return {
+        content: [{ type: "text" as const, text: appendEscapeWarnings(`Note ${args.note_id} updated by @${note.author.username}.`, { body: args.body }) }],
+      };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("delete_epic_note", {
+    description: "Delete an existing epic note. This is destructive and cannot be undone. dry_run=true by default.",
+    inputSchema: {
+      note_id: z.string().describe("Note global ID (e.g. gid://gitlab/Note/123). Returned by list_epic_notes."),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        return dryRunResponse("Delete epic note", { note_id: args.note_id });
+      }
+      await client.deleteNote(args.note_id);
+      return { content: [{ type: "text" as const, text: `Note ${args.note_id} deleted.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
     }
   });
 

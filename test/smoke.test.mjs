@@ -29,20 +29,20 @@ const EXPECTED_TOOLS = [
   // Epics
   "list_epics", "get_epic", "create_epic", "update_epic", "close_epic", "reopen_epic",
   "list_epic_issues", "add_issue_to_epic",
-  "list_epic_notes", "add_epic_note",
+  "list_epic_notes", "add_epic_note", "update_epic_note", "delete_epic_note",
   // Work Items
   "get_epic_widgets", "set_epic_milestone", "set_epic_health_status",
   "set_issue_health_status", "set_epic_iteration", "add_linked_item",
   // Issues
   "list_issues", "list_project_issues", "get_issue",
   "create_issue", "update_issue", "close_issue", "reopen_issue",
-  "list_issue_notes", "add_issue_note",
+  "list_issue_notes", "add_issue_note", "update_issue_note", "delete_issue_note",
   // Milestones
   "list_milestones", "get_milestone", "create_milestone", "update_milestone", "close_milestone",
   // Merge Requests
   "list_merge_requests", "get_merge_request",
   "create_merge_request", "update_merge_request", "merge_merge_request", "approve_merge_request",
-  "list_mr_notes", "add_mr_note", "get_mr_diff",
+  "list_mr_notes", "add_mr_note", "update_mr_note", "delete_mr_note", "get_mr_diff",
   // CI/CD
   "list_pipelines", "get_pipeline", "get_job_log", "retry_pipeline", "cancel_pipeline",
   // Branches & Repository
@@ -50,18 +50,22 @@ const EXPECTED_TOOLS = [
   // Utils
   "list_groups", "list_projects", "list_group_members",
   "list_labels", "create_label", "update_label", "delete_label",
-  "list_boards", "list_iterations", "search_users", "get_current_user",
+  "list_boards", "list_iterations", "create_iteration", "update_iteration",
+  "list_workitem_statuses",
+  "search_users", "get_current_user",
 ];
 
 const WRITE_TOOLS = [
   "create_epic", "update_epic", "close_epic", "reopen_epic",
-  "add_issue_to_epic", "add_epic_note",
+  "add_issue_to_epic", "add_epic_note", "update_epic_note", "delete_epic_note",
   "set_epic_milestone", "set_epic_health_status", "set_issue_health_status",
   "set_epic_iteration", "add_linked_item",
-  "create_issue", "update_issue", "close_issue", "reopen_issue", "add_issue_note",
+  "create_issue", "update_issue", "close_issue", "reopen_issue",
+  "add_issue_note", "update_issue_note", "delete_issue_note",
   "create_milestone", "update_milestone", "close_milestone",
+  "create_iteration", "update_iteration",
   "create_merge_request", "update_merge_request", "merge_merge_request", "approve_merge_request",
-  "add_mr_note",
+  "add_mr_note", "update_mr_note", "delete_mr_note",
   "retry_pipeline", "cancel_pipeline",
   "create_branch",
   "create_label", "update_label", "delete_label",
@@ -77,7 +81,8 @@ const GROUP_SCOPED_TOOLS = [
   "list_merge_requests",
   "list_projects", "list_group_members",
   "list_labels", "create_label", "update_label", "delete_label",
-  "list_boards", "list_iterations",
+  "list_boards", "list_iterations", "create_iteration", "update_iteration",
+  "list_workitem_statuses",
 ];
 
 // ---------------------------------------------------------------------------

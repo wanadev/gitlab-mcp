@@ -159,6 +159,7 @@ export interface GitLabLabel {
 
 export interface GitLabNote {
   id: number;
+  global_id: string;
   body: string;
   author: GitLabUser;
   created_at: string;

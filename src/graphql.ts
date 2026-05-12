@@ -468,6 +468,46 @@ export const M_EPIC_ADD_ISSUE = `
   }
 `;
 
+export const M_UPDATE_NOTE = `
+  ${USER_FRAGMENT}
+  mutation($input: UpdateNoteInput!) {
+    updateNote(input: $input) {
+      note { id body author { ...UserF } createdAt updatedAt system }
+      errors
+    }
+  }
+`;
+
+export const M_DESTROY_NOTE = `
+  mutation($input: DestroyNoteInput!) {
+    destroyNote(input: $input) {
+      note { id }
+      errors
+    }
+  }
+`;
+
+// Status widget (issue #41) — GitLab 17+ Work Items
+export const Q_WORK_ITEM_STATUSES = `
+  query($fullPath: ID!, $name: IssuableType!) {
+    group(fullPath: $fullPath) {
+      workItemTypes(name: $name) {
+        nodes {
+          id name
+          widgetDefinitions {
+            type
+            ... on WorkItemWidgetDefinitionStatus {
+              allowedStatuses {
+                id name iconName color position
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 // --- Work Items mutations ---
 
 export const Q_EPIC_WORK_ITEM_ID = `
@@ -711,6 +751,7 @@ export function mapLabel(n: any): GitLabLabel {
 export function mapNote(n: any): GitLabNote {
   return {
     id: typeof n.id === "string" ? fromGid(n.id) : n.id,
+    global_id: typeof n.id === "string" ? n.id : toGid("Note", n.id),
     body: n.body ?? "",
     author: n.author ? mapUser(n.author) : { id: 0, username: "", name: "", state: "", avatar_url: "", web_url: "" },
     created_at: n.createdAt ?? "",
