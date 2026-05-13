@@ -1,19 +1,19 @@
 # @wanadev/mcp-gitlab
 
-A Model Context Protocol (MCP) server that gives project managers full control over GitLab **epics**, **issues**, **milestones**, **iterations**, **merge requests**, **labels**, and **boards** from Claude Desktop, Claude Code, or any MCP-compatible client.
+A Model Context Protocol (MCP) server that gives project managers **and developers** full control over GitLab **epics**, **issues**, **milestones**, **iterations**, **merge requests**, **pipelines**, **branches**, **labels**, and **boards** from Claude Desktop, Claude Code, or any MCP-compatible client.
 
 ## Why this MCP server?
 
-Existing tools like **glab** are developer-oriented: they focus on merge requests, pipelines, and code review. Project managers need a different lens -- one centered on **planning and tracking**.
+Existing tools like **glab** are developer-oriented and CLI-only. `@wanadev/mcp-gitlab` covers both lenses -- planning *and* code -- through a conversational interface:
 
-`@wanadev/mcp-gitlab` fills that gap:
-
-- **Epics, milestones & iterations** -- create, update, close, and link issues to epics. Track sprints with iterations. Set health status (on track / needs attention / at risk) and view progress via Work Items API.
+- **Epics, milestones & iterations** -- create, update, close, reopen, and link issues to epics. Track sprints with iterations (CRUD). Set health status (on track / needs attention / at risk) and view progress via Work Items API.
+- **Full MR lifecycle** -- create, update, merge, approve, diff, and comment on merge requests.
+- **CI/CD** -- list and inspect pipelines, fetch job logs, retry or cancel runs.
+- **Branches & repository** -- list/create branches, browse the tree, read files, list commits.
+- **Labels & users** -- CRUD on labels, search users to assign work.
 - **Cross-group visibility** -- query multiple GitLab groups in the same conversation (no hardcoded group ID).
 - **Time tracking** -- see estimated vs. spent time on issues at a glance.
-- **Labels & boards** -- list labels and issue boards without leaving your chat.
-- **Comments (notes)** -- read and add notes on both issues and epics.
-- **Merge request monitoring** -- track MR status without switching to the developer workflow.
+- **Comments (notes)** -- read, add, edit, and delete notes on issues, epics, and MRs.
 - **Dry-run by default** -- every write operation previews what it will do before touching GitLab.
 
 ## Quick setup
@@ -89,9 +89,9 @@ All write tools (`create_*`, `update_*`, `close_*`, `set_*`, `add_*`) include a 
 
 This prevents accidental changes: the LLM always shows what it intends to do first and only proceeds after your approval.
 
-## All 36 tools
+## All 69 tools
 
-### Epics (9 tools -- requires GitLab Premium/Ultimate)
+### Epics (12 tools -- requires GitLab Premium/Ultimate)
 
 | Tool | Description | Scope | Write |
 |------|-------------|:-----:|:-----:|
@@ -100,10 +100,13 @@ This prevents accidental changes: the LLM always shows what it intends to do fir
 | `create_epic` | Create an epic | group | dry_run |
 | `update_epic` | Update an epic (title, description, labels, dates) | group | dry_run |
 | `close_epic` | Close an epic | group | dry_run |
+| `reopen_epic` | Reopen a closed epic | group | dry_run |
 | `list_epic_issues` | List issues linked to an epic | group | -- |
 | `add_issue_to_epic` | Link an issue to an epic | group | dry_run |
 | `list_epic_notes` | List comments on an epic | group | -- |
 | `add_epic_note` | Add a comment to an epic | group | dry_run |
+| `update_epic_note` | Edit an existing epic comment | group | dry_run |
+| `delete_epic_note` | Delete an epic comment | group | dry_run |
 
 ### Work Items (6 tools -- requires GitLab Premium/Ultimate)
 
@@ -116,17 +119,21 @@ This prevents accidental changes: the LLM always shows what it intends to do fir
 | `set_epic_iteration` | Associate an iteration (sprint) with an epic | group | dry_run |
 | `add_linked_item` | Link work items (RELATED / BLOCKS / BLOCKED_BY) | group/project | dry_run |
 
-### Issues (7 tools)
+### Issues (11 tools)
 
 | Tool | Description | Scope | Write |
 |------|-------------|:-----:|:-----:|
 | `list_issues` | List issues for a group | group | -- |
+| `list_project_issues` | List issues for a single project | project | -- |
 | `get_issue` | Get issue details (with time tracking) | project | -- |
 | `create_issue` | Create an issue | project | dry_run |
 | `update_issue` | Update an issue | project | dry_run |
 | `close_issue` | Close an issue | project | dry_run |
+| `reopen_issue` | Reopen a closed issue | project | dry_run |
 | `list_issue_notes` | List comments on an issue | project | -- |
 | `add_issue_note` | Add a comment to an issue | project | dry_run |
+| `update_issue_note` | Edit an existing issue comment | project | dry_run |
+| `delete_issue_note` | Delete an issue comment | project | dry_run |
 
 ### Milestones (5 tools)
 
@@ -138,20 +145,51 @@ This prevents accidental changes: the LLM always shows what it intends to do fir
 | `update_milestone` | Update a milestone | group | dry_run |
 | `close_milestone` | Close a milestone | group | dry_run |
 
-### Merge Requests (2 tools)
+### Merge Requests (11 tools)
 
 | Tool | Description | Scope | Write |
 |------|-------------|:-----:|:-----:|
 | `list_merge_requests` | List merge requests for a group | group | -- |
 | `get_merge_request` | Get merge request details | project | -- |
+| `create_merge_request` | Open a new MR (source/target branch, title, description) | project | dry_run |
+| `update_merge_request` | Update an MR (title, description, labels, assignees, reviewers) | project | dry_run |
+| `merge_merge_request` | Merge an MR (optionally squash or delete source branch) | project | dry_run |
+| `approve_merge_request` | Approve an MR | project | dry_run |
+| `get_mr_diff` | Get the diff/changes for an MR | project | -- |
+| `list_mr_notes` | List comments on an MR | project | -- |
+| `add_mr_note` | Add a comment to an MR | project | dry_run |
+| `update_mr_note` | Edit an existing MR comment | project | dry_run |
+| `delete_mr_note` | Delete an MR comment | project | dry_run |
 
-### Iterations (1 tool -- requires GitLab Premium/Ultimate)
+### CI/CD (5 tools)
+
+| Tool | Description | Scope | Write |
+|------|-------------|:-----:|:-----:|
+| `list_pipelines` | List pipelines for a project (filter by ref, status, etc.) | project | -- |
+| `get_pipeline` | Get pipeline details and jobs | project | -- |
+| `get_job_log` | Fetch the trace/log of a CI job | project | -- |
+| `retry_pipeline` | Retry a failed pipeline | project | dry_run |
+| `cancel_pipeline` | Cancel a running pipeline | project | dry_run |
+
+### Branches & Repository (5 tools)
+
+| Tool | Description | Scope | Write |
+|------|-------------|:-----:|:-----:|
+| `list_branches` | List branches in a project | project | -- |
+| `create_branch` | Create a branch from a ref | project | dry_run |
+| `list_repository_tree` | List the files/folders in a repo path | project | -- |
+| `get_file` | Read a file's contents at a given ref | project | -- |
+| `list_commits` | List commits (filter by ref, author, date) | project | -- |
+
+### Iterations (3 tools -- requires GitLab Premium/Ultimate)
 
 | Tool | Description | Scope | Write |
 |------|-------------|:-----:|:-----:|
 | `list_iterations` | List iterations/sprints (filter by state: upcoming, current, closed) | group | -- |
+| `create_iteration` | Create an iteration | group | dry_run |
+| `update_iteration` | Update an iteration (title, dates, state) | group | dry_run |
 
-### Utilities (6 tools)
+### Utilities (11 tools)
 
 | Tool | Description | Scope | Write |
 |------|-------------|:-----:|:-----:|
@@ -159,8 +197,15 @@ This prevents accidental changes: the LLM always shows what it intends to do fir
 | `list_projects` | List projects in a group | group | -- |
 | `list_group_members` | List members of a group | group | -- |
 | `list_labels` | List labels for a group | group | -- |
+| `create_label` | Create a label | group | dry_run |
+| `update_label` | Update a label (name, color, description) | group | dry_run |
+| `delete_label` | Delete a label | group | dry_run |
 | `list_boards` | List issue boards for a group | group | -- |
+| `list_workitem_statuses` | List available work item statuses (for health filtering) | group | -- |
+| `search_users` | Search GitLab users by name or username | -- | -- |
 | `get_current_user` | Check connection (current user info) | -- | -- |
+
+> A `gitlab_setup` helper tool is also registered automatically when `GITLAB_TOKEN` is missing or `GITLAB_BASE_URL` is invalid — it guides the user through configuration and is not counted in the 69 above.
 
 ## Example prompts
 
@@ -179,6 +224,13 @@ This prevents accidental changes: the LLM always shows what it intends to do fir
 - *"Add a comment on epic #3 in group 42: Specs validated, ready for dev"*
 - *"What milestones are coming up in the wanadev group?"*
 - *"List the boards for group 42"*
+- *"Open an MR from `feat/new-login` to `main` in project 789, then request review from @alice"*
+- *"Show me the diff of MR !42 and summarize the changes"*
+- *"List the last 5 failed pipelines on `main` in project 789 and fetch the log of the failing job"*
+- *"Retry pipeline 12345 in project 789"*
+- *"Create a `release/2026.05` branch from `main` in project 789"*
+- *"Read the contents of `package.json` on branch `main` in project 789"*
+- *"Find a user named 'Jean Dupont' and assign them issue #15"*
 
 ## Use cases for project managers
 
@@ -235,3 +287,4 @@ npm run dev         # Build in watch mode
 - **Read-only mode** -- With `GITLAB_READ_ONLY=true`, any create/update/close attempt returns a clear error.
 - **403 on epics** -- Epic endpoints require a GitLab Premium or Ultimate license.
 - **Multi-group workflow** -- You can work across several groups in a single conversation. The LLM will call `list_groups` to discover them, then pass the right `group_id` to each tool.
+- **GitLab CE / Free support** -- The server introspects your GitLab instance at startup and detects whether `Issue.weight` / `Issue.epic` are available (Premium/Ultimate-only fields). On Free/CE, those fields are silently omitted from queries and mutations, so all issue tools work — only epic-specific features remain Premium. The detected tier is logged at startup: `[..., Premium/Ultimate]` or `[..., Free/CE]`.

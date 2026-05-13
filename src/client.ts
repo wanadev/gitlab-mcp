@@ -5,13 +5,14 @@ import type {
 } from "./types.js";
 import {
   toGid, type ConnectionExtractor,
-  Q_CURRENT_USER, Q_GROUPS, Q_EPICS, Q_EPIC, Q_EPIC_ISSUES, Q_EPIC_NOTES,
-  Q_GROUP_ISSUES, Q_ISSUE, Q_ISSUE_NOTES,
+  Q_CURRENT_USER, Q_ISSUE_TYPE_INTROSPECTION,
+  Q_GROUPS, Q_EPICS, Q_EPIC, Q_EPIC_ISSUES, Q_EPIC_NOTES,
+  qGroupIssues, qProjectIssues, qIssue, Q_ISSUE_NOTES,
   Q_MILESTONES, Q_MILESTONE,
   Q_MERGE_REQUESTS, Q_MERGE_REQUEST,
   Q_ITERATIONS, Q_PROJECTS, Q_MEMBERS, Q_LABELS, Q_BOARDS, Q_PROJECT_PATH,
   M_CREATE_EPIC, M_UPDATE_EPIC, M_CREATE_MILESTONE, M_UPDATE_MILESTONE,
-  M_CREATE_ISSUE, M_UPDATE_ISSUE, M_CREATE_NOTE, M_EPIC_ADD_ISSUE,
+  mCreateIssue, mUpdateIssue, M_CREATE_NOTE, M_EPIC_ADD_ISSUE,
   M_UPDATE_NOTE, M_DESTROY_NOTE,
   Q_EPIC_WORK_ITEM_ID, Q_WORK_ITEM_WIDGETS, Q_ISSUE_WORK_ITEM_ID,
   M_WORK_ITEM_UPDATE, M_WORK_ITEM_ADD_LINKED, Q_WORK_ITEM_STATUSES,
@@ -24,11 +25,34 @@ export class GitLabClient {
   private token: string;
   private readOnly: boolean;
   private projectPathCache = new Map<number, string>();
+  // Tier flag — set by detectPremium() at startup. Defaults to false so the
+  // client emits CE-safe queries until detection completes, which is the
+  // correct behavior on Free/CE instances (where Premium fields would crash
+  // every issue query).
+  private isPremium = false;
 
   constructor(config: GitLabConfig) {
     this.baseUrl = config.baseUrl.replace(/\/+$/, "");
     this.token = config.token;
     this.readOnly = config.readOnly;
+  }
+
+  // Probe the GraphQL schema for `Issue.weight` (Premium/Ultimate field).
+  // Cached for the lifetime of the client. Falls back to CE-mode on any error.
+  async detectPremium(): Promise<boolean> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await this.graphql<any>(Q_ISSUE_TYPE_INTROSPECTION);
+      const fields: { name: string }[] = data?.__type?.fields ?? [];
+      this.isPremium = fields.some((f) => f.name === "weight");
+    } catch {
+      this.isPremium = false;
+    }
+    return this.isPremium;
+  }
+
+  get premium(): boolean {
+    return this.isPremium;
   }
 
   // ---------------------------------------------------------------------------
@@ -495,7 +519,7 @@ export class GitLabClient {
     sort?: string;
   }): Promise<GitLabIssue[]> {
     return this.graphqlPaginate(
-      Q_GROUP_ISSUES,
+      qGroupIssues(this.isPremium),
       {
         fullPath: groupId,
         state: params?.state && params.state !== "all" ? params.state : null,
@@ -514,7 +538,7 @@ export class GitLabClient {
   async getIssue(projectId: number, issueIid: number): Promise<GitLabIssue> {
     const projectPath = await this.resolveProjectPath(projectId);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data = await this.graphql<any>(Q_ISSUE, { projectPath, iid: String(issueIid) });
+    const data = await this.graphql<any>(qIssue(this.isPremium), { projectPath, iid: String(issueIid) });
     if (!data.project?.issue) throw new Error(`Issue #${issueIid} not found in project ${projectId}`);
     return mapIssue(data.project.issue, this.baseUrl);
   }
@@ -544,11 +568,13 @@ export class GitLabClient {
     if (data.milestone_id) input.milestoneId = toGid("Milestone", data.milestone_id);
     if (data.assignee_ids) input.assigneeIds = data.assignee_ids.map(id => toGid("User", id));
     if (data.due_date) input.dueDate = data.due_date;
-    if (data.weight != null) input.weight = data.weight;
-    if (data.epic_id) input.epicId = toGid("Epic", data.epic_id);
+    // weight / epicId are Premium-only inputs on CreateIssueInput; passing
+    // them on CE makes the entire mutation fail at schema validation time.
+    if (this.isPremium && data.weight != null) input.weight = data.weight;
+    if (this.isPremium && data.epic_id) input.epicId = toGid("Epic", data.epic_id);
     if (data.iteration_id) input.iterationId = toGid("Iteration", data.iteration_id);
 
-    const result = await this.mutate(M_CREATE_ISSUE, input, "createIssue");
+    const result = await this.mutate(mCreateIssue(this.isPremium), input, "createIssue");
     return mapIssue(result.issue, this.baseUrl);
   }
 
@@ -578,7 +604,8 @@ export class GitLabClient {
     if (data.description) input.description = data.description;
     if (data.milestone_id) input.milestoneId = toGid("Milestone", data.milestone_id);
     if (data.due_date) input.dueDate = data.due_date;
-    if (data.weight != null) input.weight = data.weight;
+    // weight is Premium-only on UpdateIssueInput; skip silently on CE.
+    if (this.isPremium && data.weight != null) input.weight = data.weight;
     if (data.state_event === "close") input.stateEvent = "CLOSE";
     if (data.state_event === "reopen") input.stateEvent = "REOPEN";
 
@@ -587,7 +614,7 @@ export class GitLabClient {
     const hasLegacyFields = Object.keys(input).length > 2;
     let issue: GitLabIssue | null = null;
     if (hasLegacyFields) {
-      const result = await this.mutate(M_UPDATE_ISSUE, input, "updateIssue");
+      const result = await this.mutate(mUpdateIssue(this.isPremium), input, "updateIssue");
       issue = mapIssue(result.issue, this.baseUrl);
     }
 
@@ -1233,7 +1260,7 @@ export class GitLabClient {
   }): Promise<GitLabIssue[]> {
     const projectPath = await this.resolveProjectPath(projectId);
     return this.graphqlPaginate(
-      Q_GROUP_ISSUES.replace("group(fullPath:", "project(fullPath:").replace("group {", "project {"),
+      qProjectIssues(this.isPremium),
       {
         fullPath: projectPath,
         state: params?.state && params.state !== "all" ? params.state : null,
