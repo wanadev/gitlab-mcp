@@ -2,14 +2,14 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
 import type { GitLabMergeRequest, GitLabNote } from "../types.js";
-
-const dryRunSchema = z.boolean().default(true).describe("Dry run mode (default: true). When true, returns a preview of the action without executing it. Set to false only after user confirmation.");
+import { idNumber, flagBool, dryRunSchema, detectEscapeIssues, formatWarnings, appendEscapeWarnings } from "./schemas.js";
 
 function dryRunResponse(action: string, details: Record<string, unknown>): { content: { type: "text"; text: string }[] } {
   const lines = Object.entries(details)
     .filter(([, v]) => v !== undefined)
     .map(([k, v]) => `  - **${k}:** ${Array.isArray(v) ? v.join(", ") : v}`);
-  const text = `[DRY RUN] ${action}\n\n${lines.join("\n")}\n\nThis is a preview. Ask the user to confirm in their language before re-calling with dry_run=false.`;
+  const warnings = formatWarnings(detectEscapeIssues(details));
+  const text = `[DRY RUN] ${action}\n\n${lines.join("\n")}${warnings}\n\nThis is a preview. Ask the user to confirm in their language before re-calling with dry_run=false.`;
   return { content: [{ type: "text" as const, text }] };
 }
 
@@ -90,8 +90,8 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
   server.registerTool("get_merge_request", {
     description: "Obtenir les details d'une merge request par son projet et son numero (IID).",
     inputSchema: {
-      project_id: z.number().describe("ID du projet"),
-      mr_iid: z.number().describe("Numero de la merge request (IID)"),
+      project_id: idNumber().describe("ID du projet"),
+      mr_iid: idNumber().describe("Numero de la merge request (IID)"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
@@ -109,15 +109,15 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
   server.registerTool("create_merge_request", {
     description: "Create a new merge request. dry_run=true by default.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
+      project_id: idNumber().describe("Project ID"),
       source_branch: z.string().describe("Source branch name"),
       target_branch: z.string().describe("Target branch name"),
       title: z.string().describe("MR title"),
       description: z.string().optional().describe("MR description (Markdown)"),
       labels: z.string().optional().describe("Labels (comma-separated)"),
-      assignee_ids: z.array(z.number()).optional().describe("Assignee user IDs"),
-      reviewer_ids: z.array(z.number()).optional().describe("Reviewer user IDs"),
-      milestone_id: z.number().optional().describe("Milestone ID"),
+      assignee_ids: z.array(idNumber()).optional().describe("Assignee user IDs"),
+      reviewer_ids: z.array(idNumber()).optional().describe("Reviewer user IDs"),
+      milestone_id: idNumber().optional().describe("Milestone ID"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
@@ -126,7 +126,7 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
       const { project_id, dry_run, ...data } = args;
       if (dry_run) return dryRunResponse("Create merge request", { project_id, ...data });
       const mr = await client.createMergeRequest(project_id, data);
-      return { content: [{ type: "text" as const, text: `MR created!\n\n${formatMRDetail(mr)}` }] };
+      return { content: [{ type: "text" as const, text: appendEscapeWarnings(`MR created!\n\n${formatMRDetail(mr)}`, data) }] };
     } catch (error) {
       return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
     }
@@ -135,15 +135,15 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
   server.registerTool("update_merge_request", {
     description: "Update a merge request (title, description, labels, assignees, reviewers). dry_run=true by default.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
-      mr_iid: z.number().describe("MR IID"),
+      project_id: idNumber().describe("Project ID"),
+      mr_iid: idNumber().describe("MR IID"),
       title: z.string().optional().describe("New title"),
       description: z.string().optional().describe("New description (Markdown)"),
       add_labels: z.string().optional().describe("Labels to add (comma-separated)"),
       remove_labels: z.string().optional().describe("Labels to remove (comma-separated)"),
-      assignee_ids: z.array(z.number()).optional().describe("Assignee user IDs"),
-      reviewer_ids: z.array(z.number()).optional().describe("Reviewer user IDs"),
-      milestone_id: z.number().optional().describe("Milestone ID"),
+      assignee_ids: z.array(idNumber()).optional().describe("Assignee user IDs"),
+      reviewer_ids: z.array(idNumber()).optional().describe("Reviewer user IDs"),
+      milestone_id: idNumber().optional().describe("Milestone ID"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
@@ -152,7 +152,7 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
       const { project_id, mr_iid, dry_run, ...data } = args;
       if (dry_run) return dryRunResponse("Update merge request", { project_id, mr_iid, ...data });
       const mr = await client.updateMergeRequest(project_id, mr_iid, data);
-      return { content: [{ type: "text" as const, text: `MR updated!\n\n${formatMRDetail(mr)}` }] };
+      return { content: [{ type: "text" as const, text: appendEscapeWarnings(`MR updated!\n\n${formatMRDetail(mr)}`, data) }] };
     } catch (error) {
       return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
     }
@@ -161,11 +161,11 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
   server.registerTool("merge_merge_request", {
     description: "Merge a merge request. dry_run=true by default.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
-      mr_iid: z.number().describe("MR IID to merge"),
+      project_id: idNumber().describe("Project ID"),
+      mr_iid: idNumber().describe("MR IID to merge"),
       merge_commit_message: z.string().optional().describe("Custom merge commit message"),
-      squash: z.boolean().optional().describe("Squash commits into one"),
-      should_remove_source_branch: z.boolean().optional().describe("Delete source branch after merge"),
+      squash: flagBool().optional().describe("Squash commits into one"),
+      should_remove_source_branch: flagBool().optional().describe("Delete source branch after merge"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
@@ -186,8 +186,8 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
   server.registerTool("approve_merge_request", {
     description: "Approve a merge request. dry_run=true by default.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
-      mr_iid: z.number().describe("MR IID to approve"),
+      project_id: idNumber().describe("Project ID"),
+      mr_iid: idNumber().describe("MR IID to approve"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
@@ -204,8 +204,8 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
   server.registerTool("list_mr_notes", {
     description: "List comments on a merge request.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
-      mr_iid: z.number().describe("MR IID"),
+      project_id: idNumber().describe("Project ID"),
+      mr_iid: idNumber().describe("MR IID"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
@@ -214,7 +214,7 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
       const userNotes = notes.filter((n: GitLabNote) => !n.system);
       if (userNotes.length === 0) return { content: [{ type: "text" as const, text: "No comments on this MR." }] };
       const text = userNotes.map((n: GitLabNote) =>
-        `**${n.author.name}** (@${n.author.username}) — ${n.created_at}\n${n.body}`
+        `**${n.author.name}** (@${n.author.username}) — ${n.created_at}\n  note_id: \`${n.global_id}\`\n${n.body}`
       ).join("\n\n---\n\n");
       return { content: [{ type: "text" as const, text: `${userNotes.length} comment(s):\n\n${text}` }] };
     } catch (error) {
@@ -225,8 +225,8 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
   server.registerTool("add_mr_note", {
     description: "Add a comment to a merge request. dry_run=true by default.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
-      mr_iid: z.number().describe("MR IID"),
+      project_id: idNumber().describe("Project ID"),
+      mr_iid: idNumber().describe("MR IID"),
       body: z.string().describe("Comment body (Markdown)"),
       dry_run: dryRunSchema,
     },
@@ -235,7 +235,46 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
     try {
       if (args.dry_run) return dryRunResponse("Comment on MR", { project_id: args.project_id, mr_iid: args.mr_iid, body: args.body });
       const note = await client.addMRNote(args.project_id, args.mr_iid, args.body);
-      return { content: [{ type: "text" as const, text: `Comment added on MR !${args.mr_iid} by @${note.author.username}.` }] };
+      return { content: [{ type: "text" as const, text: appendEscapeWarnings(`Comment added on MR !${args.mr_iid} by @${note.author.username}.`, { body: args.body }) }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("update_mr_note", {
+    description: "Edit the body of an existing MR note. Get note_id from list_mr_notes. dry_run=true by default.",
+    inputSchema: {
+      note_id: z.string().describe("Note global ID (e.g. gid://gitlab/Note/123 or gid://gitlab/DiscussionNote/123). Returned by list_mr_notes."),
+      body: z.string().describe("New note body (Markdown). Replaces the existing content entirely."),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        return dryRunResponse("Update MR note", { note_id: args.note_id, body: args.body });
+      }
+      const note = await client.updateNote(args.note_id, args.body);
+      return { content: [{ type: "text" as const, text: appendEscapeWarnings(`Note ${args.note_id} updated by @${note.author.username}.`, { body: args.body }) }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("delete_mr_note", {
+    description: "Delete an existing MR note. This is destructive and cannot be undone. dry_run=true by default.",
+    inputSchema: {
+      note_id: z.string().describe("Note global ID (e.g. gid://gitlab/Note/123). Returned by list_mr_notes."),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        return dryRunResponse("Delete MR note", { note_id: args.note_id });
+      }
+      await client.deleteNote(args.note_id);
+      return { content: [{ type: "text" as const, text: `Note ${args.note_id} deleted.` }] };
     } catch (error) {
       return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
     }
@@ -244,8 +283,8 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
   server.registerTool("get_mr_diff", {
     description: "Get the file changes (diff summary) of a merge request.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
-      mr_iid: z.number().describe("MR IID"),
+      project_id: idNumber().describe("Project ID"),
+      mr_iid: idNumber().describe("MR IID"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {

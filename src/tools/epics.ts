@@ -2,15 +2,16 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
 import type { GitLabEpic, GitLabIssue, GitLabNote } from "../types.js";
+import { idNumber, dryRunSchema, detectEscapeIssues, formatWarnings, appendEscapeWarnings } from "./schemas.js";
 
 const groupIdSchema = z.string().describe("ID ou chemin URL du groupe GitLab (ex: '42' ou 'wanadev/kp1'). Si vous n'avez que le nom, appelez d'abord list_groups pour trouver le chemin exact.");
-const dryRunSchema = z.boolean().default(true).describe("Dry run mode (default: true). When true, returns a preview of the action without executing it. Set to false only after user confirmation.");
 
 function dryRunResponse(action: string, details: Record<string, unknown>): { content: { type: "text"; text: string }[] } {
   const lines = Object.entries(details)
     .filter(([, v]) => v !== undefined)
     .map(([k, v]) => `  - **${k}:** ${v}`);
-  const text = `[DRY RUN] ${action}\n\n${lines.join("\n")}\n\nThis is a preview. Ask the user to confirm in their language before re-calling with dry_run=false.`;
+  const warnings = formatWarnings(detectEscapeIssues(details));
+  const text = `[DRY RUN] ${action}\n\n${lines.join("\n")}${warnings}\n\nThis is a preview. Ask the user to confirm in their language before re-calling with dry_run=false.`;
   return { content: [{ type: "text" as const, text }] };
 }
 
@@ -82,7 +83,7 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
     description: "Obtenir les details complets d'un epic par son numero (IID).",
     inputSchema: {
       group_id: groupIdSchema,
-      epic_iid: z.number().describe("Numero de l'epic (IID affiche dans GitLab)"),
+      epic_iid: idNumber().describe("Numero de l'epic (IID affiche dans GitLab)"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
@@ -117,7 +118,7 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
       }
       const epic = await client.createEpic(group_id, data);
       return {
-        content: [{ type: "text" as const, text: `Epic cree avec succes !\n\n${formatEpicDetail(epic)}` }],
+        content: [{ type: "text" as const, text: appendEscapeWarnings(`Epic cree avec succes !\n\n${formatEpicDetail(epic)}`, data) }],
       };
     } catch (error) {
       return {
@@ -131,25 +132,30 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
     description: "Mettre a jour un epic existant. Par defaut dry_run=true : retourne un apercu sans modifier. Passer dry_run=false apres confirmation.",
     inputSchema: {
       group_id: groupIdSchema,
-      epic_iid: z.number().describe("Numero de l'epic (IID)"),
+      epic_iid: idNumber().describe("Numero de l'epic (IID)"),
       title: z.string().optional().describe("Nouveau titre"),
       description: z.string().optional().describe("Nouvelle description (Markdown)"),
       add_labels: z.string().optional().describe("Labels to add (comma-separated). Does NOT remove existing labels."),
       remove_labels: z.string().optional().describe("Labels to remove (comma-separated)."),
       start_date: z.string().optional().describe("Nouvelle date de debut (YYYY-MM-DD)"),
       due_date: z.string().optional().describe("Nouvelle date d'echeance (YYYY-MM-DD)"),
+      assignee_ids: z.array(idNumber()).optional().describe("Numeric user IDs to assign (replaces current assignees). Routed through workItemUpdate.assigneesWidget — UpdateEpicInput has no assignees field on modern Work Items."),
+      status_id: z.string().optional().describe("Status widget GID (GitLab 17+). Get the valid ids from list_workitem_statuses with work_item_type=EPIC."),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
   }, async (args) => {
     try {
-      const { group_id, epic_iid, dry_run, ...data } = args;
+      const { group_id, epic_iid, dry_run, status_id, ...data } = args;
       if (dry_run) {
-        return dryRunResponse("Modifier l'epic", { groupe: group_id, epic_iid, ...data });
+        return dryRunResponse("Modifier l'epic", { groupe: group_id, epic_iid, ...data, status_id });
       }
       const epic = await client.updateEpic(group_id, epic_iid, data);
+      if (status_id) {
+        await client.setEpicStatus(group_id, epic_iid, status_id);
+      }
       return {
-        content: [{ type: "text" as const, text: `Epic mis a jour !\n\n${formatEpicDetail(epic)}` }],
+        content: [{ type: "text" as const, text: appendEscapeWarnings(`Epic mis a jour !\n\n${formatEpicDetail(epic)}`, data) }],
       };
     } catch (error) {
       return {
@@ -163,7 +169,7 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
     description: "Fermer un epic. Par defaut dry_run=true : retourne un apercu sans fermer. Passer dry_run=false apres confirmation.",
     inputSchema: {
       group_id: groupIdSchema,
-      epic_iid: z.number().describe("Numero de l'epic (IID) a fermer"),
+      epic_iid: idNumber().describe("Numero de l'epic (IID) a fermer"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
@@ -188,7 +194,7 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
     description: "Reopen a closed epic. dry_run=true by default.",
     inputSchema: {
       group_id: groupIdSchema,
-      epic_iid: z.number().describe("Epic IID to reopen"),
+      epic_iid: idNumber().describe("Epic IID to reopen"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
@@ -209,7 +215,7 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
       "Lister les issues rattachees a un epic. Affiche l'ID global et le IID projet de chaque issue.",
     inputSchema: {
       group_id: groupIdSchema,
-      epic_iid: z.number().describe("Numero de l'epic (IID)"),
+      epic_iid: idNumber().describe("Numero de l'epic (IID)"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
@@ -233,9 +239,9 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
       "Link an issue to an epic. dry_run=true by default. Requires project_id and issue_iid (not the global issue ID).",
     inputSchema: {
       group_id: groupIdSchema,
-      epic_iid: z.number().describe("Epic IID"),
-      project_id: z.number().describe("Project ID where the issue lives"),
-      issue_iid: z.number().describe("Issue IID within the project"),
+      epic_iid: idNumber().describe("Epic IID"),
+      project_id: idNumber().describe("Project ID where the issue lives"),
+      issue_iid: idNumber().describe("Issue IID within the project"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
@@ -265,7 +271,7 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
     description: "Lister les commentaires d'un epic.",
     inputSchema: {
       group_id: groupIdSchema,
-      epic_iid: z.number().describe("Numero de l'epic (IID)"),
+      epic_iid: idNumber().describe("Numero de l'epic (IID)"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
@@ -276,7 +282,7 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
         return { content: [{ type: "text" as const, text: "Aucun commentaire sur cet epic." }] };
       }
       const text = userNotes.map((n: GitLabNote) =>
-        `**${n.author.name}** (@${n.author.username}) — ${n.created_at}\n${n.body}`
+        `**${n.author.name}** (@${n.author.username}) — ${n.created_at}\n  note_id: \`${n.global_id}\`\n${n.body}`
       ).join("\n\n---\n\n");
       return { content: [{ type: "text" as const, text: `${userNotes.length} commentaire(s) :\n\n${text}` }] };
     } catch (error) {
@@ -291,7 +297,7 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
     description: "Ajouter un commentaire sur un epic. Par defaut dry_run=true.",
     inputSchema: {
       group_id: groupIdSchema,
-      epic_iid: z.number().describe("Numero de l'epic (IID)"),
+      epic_iid: idNumber().describe("Numero de l'epic (IID)"),
       body: z.string().describe("Contenu du commentaire (Markdown)"),
       dry_run: dryRunSchema,
     },
@@ -303,7 +309,7 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
       }
       const note = await client.addEpicNote(args.group_id, args.epic_iid, args.body);
       return {
-        content: [{ type: "text" as const, text: `Commentaire ajoute sur l'epic #${args.epic_iid} par @${note.author.username}.` }],
+        content: [{ type: "text" as const, text: appendEscapeWarnings(`Commentaire ajoute sur l'epic #${args.epic_iid} par @${note.author.username}.`, { body: args.body }) }],
       };
     } catch (error) {
       return {
@@ -313,13 +319,54 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
     }
   });
 
+  server.registerTool("update_epic_note", {
+    description: "Edit the body of an existing epic note. Get note_id from list_epic_notes. dry_run=true by default.",
+    inputSchema: {
+      note_id: z.string().describe("Note global ID (e.g. gid://gitlab/Note/123 or gid://gitlab/DiscussionNote/123). Returned by list_epic_notes."),
+      body: z.string().describe("New note body (Markdown). Replaces the existing content entirely."),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        return dryRunResponse("Update epic note", { note_id: args.note_id, body: args.body });
+      }
+      const note = await client.updateNote(args.note_id, args.body);
+      return {
+        content: [{ type: "text" as const, text: appendEscapeWarnings(`Note ${args.note_id} updated by @${note.author.username}.`, { body: args.body }) }],
+      };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("delete_epic_note", {
+    description: "Delete an existing epic note. This is destructive and cannot be undone. dry_run=true by default.",
+    inputSchema: {
+      note_id: z.string().describe("Note global ID (e.g. gid://gitlab/Note/123). Returned by list_epic_notes."),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        return dryRunResponse("Delete epic note", { note_id: args.note_id });
+      }
+      await client.deleteNote(args.note_id);
+      return { content: [{ type: "text" as const, text: `Note ${args.note_id} deleted.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
   // --- Work Items tools ---
 
   server.registerTool("get_epic_widgets", {
     description: "Get Work Item widgets for an epic: health status, progress, milestone, iteration, and linked items.",
     inputSchema: {
       group_id: groupIdSchema,
-      epic_iid: z.number().describe("Epic IID"),
+      epic_iid: idNumber().describe("Epic IID"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
@@ -364,8 +411,8 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
     description: "Associate a milestone with an epic (uses Work Items API). dry_run=true by default.",
     inputSchema: {
       group_id: groupIdSchema,
-      epic_iid: z.number().describe("Epic IID"),
-      milestone_id: z.number().nullable().describe("Milestone ID (null to remove)"),
+      epic_iid: idNumber().describe("Epic IID"),
+      milestone_id: idNumber().nullable().describe("Milestone ID (null to remove)"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
@@ -385,7 +432,7 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
     description: "Set the health status of an epic (onTrack, needsAttention, atRisk, or null to clear). dry_run=true by default.",
     inputSchema: {
       group_id: groupIdSchema,
-      epic_iid: z.number().describe("Epic IID"),
+      epic_iid: idNumber().describe("Epic IID"),
       health_status: z.enum(["onTrack", "needsAttention", "atRisk"]).nullable().describe("Health status (null to clear)"),
       dry_run: dryRunSchema,
     },
@@ -405,8 +452,8 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
   server.registerTool("set_issue_health_status", {
     description: "Set the health status of an issue (onTrack, needsAttention, atRisk, or null to clear). dry_run=true by default.",
     inputSchema: {
-      project_id: z.number().describe("Project ID"),
-      issue_iid: z.number().describe("Issue IID"),
+      project_id: idNumber().describe("Project ID"),
+      issue_iid: idNumber().describe("Issue IID"),
       health_status: z.enum(["onTrack", "needsAttention", "atRisk"]).nullable().describe("Health status (null to clear)"),
       dry_run: dryRunSchema,
     },
@@ -427,8 +474,8 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
     description: "Associate an iteration (sprint) with an epic (uses Work Items API). dry_run=true by default.",
     inputSchema: {
       group_id: groupIdSchema,
-      epic_iid: z.number().describe("Epic IID"),
-      iteration_id: z.number().nullable().describe("Iteration ID (null to remove)"),
+      epic_iid: idNumber().describe("Epic IID"),
+      iteration_id: idNumber().nullable().describe("Iteration ID (null to remove)"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
@@ -449,8 +496,8 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
     inputSchema: {
       source_type: z.enum(["epic", "issue"]).describe("Source work item type"),
       group_id: z.string().optional().describe("Group ID (required if source is epic)"),
-      project_id: z.number().optional().describe("Project ID (required if source is issue)"),
-      source_iid: z.number().describe("Source IID (epic or issue)"),
+      project_id: idNumber().optional().describe("Project ID (required if source is issue)"),
+      source_iid: idNumber().describe("Source IID (epic or issue)"),
       target_gid: z.string().describe("Target work item GID (e.g. gid://gitlab/Issue/123 — get it from get_issue or get_epic_widgets)"),
       link_type: z.enum(["RELATED", "BLOCKS", "BLOCKED_BY"]).describe("Relationship type"),
       dry_run: dryRunSchema,

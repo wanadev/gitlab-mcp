@@ -12,8 +12,9 @@ import {
   Q_ITERATIONS, Q_PROJECTS, Q_MEMBERS, Q_LABELS, Q_BOARDS, Q_PROJECT_PATH,
   M_CREATE_EPIC, M_UPDATE_EPIC, M_CREATE_MILESTONE, M_UPDATE_MILESTONE,
   M_CREATE_ISSUE, M_UPDATE_ISSUE, M_CREATE_NOTE, M_EPIC_ADD_ISSUE,
+  M_UPDATE_NOTE, M_DESTROY_NOTE,
   Q_EPIC_WORK_ITEM_ID, Q_WORK_ITEM_WIDGETS, Q_ISSUE_WORK_ITEM_ID,
-  M_WORK_ITEM_UPDATE, M_WORK_ITEM_ADD_LINKED,
+  M_WORK_ITEM_UPDATE, M_WORK_ITEM_ADD_LINKED, Q_WORK_ITEM_STATUSES,
   mapUser, mapEpic, mapIssue, mapMilestone, mapMergeRequest,
   mapGroup, mapProject, mapMember, mapLabel, mapNote, mapBoard, mapIteration,
 } from "./graphql.js";
@@ -245,6 +246,7 @@ export class GitLabClient {
       start_date?: string;
       due_date?: string;
       state_event?: string;
+      assignee_ids?: number[];
     },
   ): Promise<GitLabEpic> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -261,8 +263,20 @@ export class GitLabClient {
     if (data.state_event === "close") input.stateEvent = "CLOSE";
     if (data.state_event === "reopen") input.stateEvent = "REOPEN";
 
-    const result = await this.mutate(M_UPDATE_EPIC, input, "updateEpic");
-    return mapEpic(result.epic);
+    const hasLegacyFields = Object.keys(input).length > 2;
+    let epic: GitLabEpic | null = null;
+    if (hasLegacyFields) {
+      const result = await this.mutate(M_UPDATE_EPIC, input, "updateEpic");
+      epic = mapEpic(result.epic);
+    }
+
+    // Issue #44: assigneesWidget — UpdateEpicInput has no assignees field
+    // on modern Work Items, so route through workItemUpdate.
+    if (data.assignee_ids) {
+      await this.setEpicAssignees(groupId, epicIid, data.assignee_ids);
+    }
+
+    return epic ?? await this.getEpic(groupId, epicIid);
   }
 
   async closeEpic(groupId: string, epicIid: number): Promise<GitLabEpic> {
@@ -311,6 +325,19 @@ export class GitLabClient {
     const noteableId = toGid("Epic", epic.id);
     const result = await this.mutate(M_CREATE_NOTE, { noteableId, body }, "createNote");
     return mapNote(result.note);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Notes — update / delete (issue #42)
+  // ---------------------------------------------------------------------------
+
+  async updateNote(noteGid: string, body: string): Promise<GitLabNote> {
+    const result = await this.mutate(M_UPDATE_NOTE, { id: noteGid, body }, "updateNote");
+    return mapNote(result.note);
+  }
+
+  async deleteNote(noteGid: string): Promise<void> {
+    await this.mutate(M_DESTROY_NOTE, { id: noteGid }, "destroyNote");
   }
 
   // ---------------------------------------------------------------------------
@@ -373,6 +400,69 @@ export class GitLabClient {
     await this.mutate(M_WORK_ITEM_UPDATE, {
       id: epicGid,
       iterationWidget: { iterationId: iterationId ? toGid("Iteration", iterationId) : null },
+    }, "workItemUpdate");
+  }
+
+  async setIssueIteration(projectId: number, issueIid: number, iterationId: number | null): Promise<void> {
+    const issueGid = await this.resolveIssueWorkItemGid(projectId, issueIid);
+    await this.mutate(M_WORK_ITEM_UPDATE, {
+      id: issueGid,
+      iterationWidget: { iterationId: iterationId ? toGid("Iteration", iterationId) : null },
+    }, "workItemUpdate");
+  }
+
+  async setEpicAssignees(groupId: string, epicIid: number, assigneeIds: number[]): Promise<void> {
+    const epicGid = await this.resolveEpicWorkItemGid(groupId, epicIid);
+    await this.mutate(M_WORK_ITEM_UPDATE, {
+      id: epicGid,
+      assigneesWidget: { assigneeIds: assigneeIds.map(id => toGid("User", id)) },
+    }, "workItemUpdate");
+  }
+
+  async setIssueAssignees(projectId: number, issueIid: number, assigneeIds: number[]): Promise<void> {
+    const issueGid = await this.resolveIssueWorkItemGid(projectId, issueIid);
+    await this.mutate(M_WORK_ITEM_UPDATE, {
+      id: issueGid,
+      assigneesWidget: { assigneeIds: assigneeIds.map(id => toGid("User", id)) },
+    }, "workItemUpdate");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Status widget (issue #41) — GitLab 17+ Work Items
+  // ---------------------------------------------------------------------------
+
+  async listWorkItemStatuses(
+    groupId: string,
+    workItemType: "ISSUE" | "EPIC" | "TASK" | "INCIDENT" | "REQUIREMENTS" | "TEST_CASE" | "OBJECTIVE" | "KEY_RESULT" | "TICKET",
+  ): Promise<{ id: string; name: string; iconName: string | null; color: string | null; position: number }[]> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await this.graphql<any>(Q_WORK_ITEM_STATUSES, { fullPath: groupId, name: workItemType });
+    const types = data.group?.workItemTypes?.nodes ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const statusWidget = types[0]?.widgetDefinitions?.find((w: any) => w.type === "STATUS" || w.allowedStatuses);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (statusWidget?.allowedStatuses ?? []).map((s: any) => ({
+      id: s.id,
+      name: s.name,
+      iconName: s.iconName ?? null,
+      color: s.color ?? null,
+      position: s.position ?? 0,
+    }));
+  }
+
+  async setEpicStatus(groupId: string, epicIid: number, statusId: string): Promise<void> {
+    const epicGid = await this.resolveEpicWorkItemGid(groupId, epicIid);
+    await this.mutate(M_WORK_ITEM_UPDATE, {
+      id: epicGid,
+      statusWidget: { status: { id: statusId } },
+    }, "workItemUpdate");
+  }
+
+  async setIssueStatus(projectId: number, issueIid: number, statusId: string): Promise<void> {
+    const issueGid = await this.resolveIssueWorkItemGid(projectId, issueIid);
+    await this.mutate(M_WORK_ITEM_UPDATE, {
+      id: issueGid,
+      statusWidget: { status: { id: statusId } },
     }, "workItemUpdate");
   }
 
@@ -487,15 +577,26 @@ export class GitLabClient {
     if (data.title) input.title = data.title;
     if (data.description) input.description = data.description;
     if (data.milestone_id) input.milestoneId = toGid("Milestone", data.milestone_id);
-    if (data.assignee_ids) input.assigneeIds = data.assignee_ids.map(id => toGid("User", id));
     if (data.due_date) input.dueDate = data.due_date;
     if (data.weight != null) input.weight = data.weight;
     if (data.state_event === "close") input.stateEvent = "CLOSE";
     if (data.state_event === "reopen") input.stateEvent = "REOPEN";
-    if (data.iteration_id) input.iterationId = toGid("Iteration", data.iteration_id);
 
-    const result = await this.mutate(M_UPDATE_ISSUE, input, "updateIssue");
-    const issue = mapIssue(result.issue, this.baseUrl);
+    // Issue #44: assigneeIds / iterationId on UpdateIssueInput silently no-op
+    // on modern Work Items — route those through workItemUpdate instead.
+    const hasLegacyFields = Object.keys(input).length > 2;
+    let issue: GitLabIssue | null = null;
+    if (hasLegacyFields) {
+      const result = await this.mutate(M_UPDATE_ISSUE, input, "updateIssue");
+      issue = mapIssue(result.issue, this.baseUrl);
+    }
+
+    if (data.assignee_ids) {
+      await this.setIssueAssignees(projectId, issueIid, data.assignee_ids);
+    }
+    if (data.iteration_id) {
+      await this.setIssueIteration(projectId, issueIid, data.iteration_id);
+    }
 
     // add/remove labels via REST (not supported in GraphQL UpdateIssueInput)
     if (data.add_labels || data.remove_labels) {
@@ -515,7 +616,7 @@ export class GitLabClient {
       }
       return (await restResp.json()) as GitLabIssue;
     }
-    return issue;
+    return issue ?? await this.getIssue(projectId, issueIid);
   }
 
   async closeIssue(projectId: number, issueIid: number): Promise<GitLabIssue> {
@@ -841,6 +942,53 @@ export class GitLabClient {
       (d: any) => d.group?.iterations,
       mapIteration,
     );
+  }
+
+  async createIteration(groupId: string, data: {
+    title?: string;
+    description?: string;
+    start_date: string;
+    due_date: string;
+  }): Promise<GitLabIteration> {
+    // REST: GraphQL iterationCreate exists but the REST endpoint is the
+    // canonical path on GitLab 17+ since iteration mutations were redesigned
+    // around iteration cadences. Falling back to REST keeps the surface stable.
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/groups/${encodeURIComponent(groupId)}/iterations`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as GitLabIteration;
+  }
+
+  async updateIteration(groupId: string, iterationIid: number, data: {
+    title?: string;
+    description?: string;
+    start_date?: string;
+    due_date?: string;
+    state_event?: string;
+  }): Promise<GitLabIteration> {
+    // REST path uses the per-group iid, NOT the global iteration id.
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/groups/${encodeURIComponent(groupId)}/iterations/${iterationIid}`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "PUT",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as GitLabIteration;
   }
 
   // ---------------------------------------------------------------------------

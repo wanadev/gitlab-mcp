@@ -3,8 +3,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
 import type { GitLabMilestone } from "../types.js";
 
+import { idNumber, dryRunSchema } from "./schemas.js";
+
 const groupIdSchema = z.string().describe("ID ou chemin URL du groupe GitLab (ex: '42' ou 'wanadev/kp1'). Si vous n'avez que le nom, appelez d'abord list_groups pour trouver le chemin exact.");
-const dryRunSchema = z.boolean().default(true).describe("Dry run mode (default: true). When true, returns a preview of the action without executing it. Set to false only after user confirmation.");
 
 function dryRunResponse(action: string, details: Record<string, unknown>): { content: { type: "text"; text: string }[] } {
   const lines = Object.entries(details)
@@ -68,7 +69,7 @@ export function registerMilestoneTools(server: McpServer, client: GitLabClient):
     description: "Obtenir les details d'un milestone par son ID.",
     inputSchema: {
       group_id: groupIdSchema,
-      milestone_id: z.number().describe("ID du milestone"),
+      milestone_id: idNumber().describe("ID du milestone"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
@@ -116,7 +117,7 @@ export function registerMilestoneTools(server: McpServer, client: GitLabClient):
     description: "Mettre a jour un milestone existant. Par defaut dry_run=true.",
     inputSchema: {
       group_id: groupIdSchema,
-      milestone_id: z.number().describe("ID du milestone"),
+      milestone_id: idNumber().describe("ID du milestone"),
       title: z.string().optional().describe("Nouveau titre"),
       description: z.string().optional().describe("Nouvelle description"),
       start_date: z.string().optional().describe("Nouvelle date de debut (YYYY-MM-DD)"),
@@ -146,7 +147,7 @@ export function registerMilestoneTools(server: McpServer, client: GitLabClient):
     description: "Fermer un milestone. Par defaut dry_run=true.",
     inputSchema: {
       group_id: groupIdSchema,
-      milestone_id: z.number().describe("ID du milestone a fermer"),
+      milestone_id: idNumber().describe("ID du milestone a fermer"),
       dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },

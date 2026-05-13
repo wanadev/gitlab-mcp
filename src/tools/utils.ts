@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { GitLabClient } from "../client.js";
 import type { GitLabProject, GitLabMember, GitLabUser, GitLabGroup, GitLabLabel, GitLabBoard, GitLabIteration } from "../types.js";
+import { idNumber, flagBool, dryRunSchema, detectEscapeIssues, formatWarnings, appendEscapeWarnings } from "./schemas.js";
 
 const groupIdSchema = z.string().describe("ID ou chemin URL du groupe GitLab (ex: '42' ou 'wanadev/kp1'). Si vous n'avez que le nom, appelez d'abord list_groups pour trouver le chemin exact.");
 
@@ -53,7 +54,7 @@ function formatGroups(groups: GitLabGroup[]): string {
 function formatLabel(l: GitLabLabel): string {
   const prio = l.priority != null ? ` — Priorite: ${l.priority}` : "";
   const desc = l.description ? ` — ${l.description}` : "";
-  return `**${l.name}** (${l.color}) — ${l.open_issues_count} issues ouvertes, ${l.closed_issues_count} fermees, ${l.open_merge_requests_count} MRs${prio}${desc}`;
+  return `**${l.name}** (id:${l.id}, ${l.color}) — ${l.open_issues_count} issues ouvertes, ${l.closed_issues_count} fermees, ${l.open_merge_requests_count} MRs${prio}${desc}`;
 }
 
 function formatLabels(labels: GitLabLabel[]): string {
@@ -80,7 +81,7 @@ export function registerUtilTools(server: McpServer, client: GitLabClient): void
       "Lister les groupes GitLab accessibles. IMPORTANT : appelez ce tool en premier quand l'utilisateur mentionne un groupe par son nom, pour obtenir le group_id (ID ou full_path) a passer aux autres tools.",
     inputSchema: {
       search: z.string().optional().describe("Recherche textuelle dans le nom du groupe"),
-      top_level_only: z.boolean().optional().describe("Ne retourner que les groupes de premier niveau"),
+      top_level_only: flagBool().optional().describe("Ne retourner que les groupes de premier niveau"),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
@@ -192,7 +193,7 @@ export function registerUtilTools(server: McpServer, client: GitLabClient): void
       }
       const text = iterations.map((it: GitLabIteration) => {
         const dates = `${it.start_date} → ${it.due_date}`;
-        return `**${it.title}** (id:${it.id}) — ${it.state} — ${dates}\n  ${it.web_url}`;
+        return `**${it.title}** (id:${it.id}, iid:${it.iid}) — ${it.state} — ${dates}\n  ${it.web_url}`;
       }).join("\n\n");
       return { content: [{ type: "text" as const, text: `${iterations.length} iteration(s) :\n\n${text}` }] };
     } catch (error) {
@@ -203,6 +204,89 @@ export function registerUtilTools(server: McpServer, client: GitLabClient): void
     }
   });
 
+  server.registerTool("create_iteration", {
+    description: "Create a new iteration (sprint) in a group. start_date and due_date are required (YYYY-MM-DD). dry_run=true by default.",
+    inputSchema: {
+      group_id: groupIdSchema,
+      title: z.string().optional().describe("Iteration title. Optional — GitLab can auto-name from dates."),
+      description: z.string().optional().describe("Iteration description (Markdown)."),
+      start_date: z.string().describe("Start date (YYYY-MM-DD). Required."),
+      due_date: z.string().describe("Due date (YYYY-MM-DD). Required."),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      const { group_id, dry_run, ...data } = args;
+      const details = { group: group_id, ...data };
+      if (dry_run) {
+        const lines = Object.entries(details).filter(([, v]) => v !== undefined).map(([k, v]) => `  - **${k}:** ${v}`);
+        const warn = formatWarnings(detectEscapeIssues(details));
+        return { content: [{ type: "text" as const, text: `[DRY RUN] Create iteration\n\n${lines.join("\n")}${warn}\n\nThis is a preview. Ask the user to confirm in their language before re-calling with dry_run=false.` }] };
+      }
+      const it = await client.createIteration(group_id, data);
+      const dates = `${it.start_date} → ${it.due_date}`;
+      const text = `Iteration created: **${it.title}** (id:${it.id}, iid:${it.iid}) — ${it.state} — ${dates}\n  ${it.web_url}`;
+      return { content: [{ type: "text" as const, text: appendEscapeWarnings(text, data) }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("update_iteration", {
+    description: "Update an existing iteration (sprint). The REST path uses iteration_iid (per-group), not the global id. dry_run=true by default.",
+    inputSchema: {
+      group_id: groupIdSchema,
+      iteration_iid: idNumber().describe("Iteration IID (per-group). Visible as `iid:` in list_iterations output."),
+      title: z.string().optional().describe("New iteration title."),
+      description: z.string().optional().describe("New description (Markdown)."),
+      start_date: z.string().optional().describe("New start date (YYYY-MM-DD)."),
+      due_date: z.string().optional().describe("New due date (YYYY-MM-DD)."),
+      state_event: z.enum(["close", "reopen"]).optional().describe("State transition."),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      const { group_id, iteration_iid, dry_run, ...data } = args;
+      const details = { group: group_id, iteration_iid, ...data };
+      if (dry_run) {
+        const lines = Object.entries(details).filter(([, v]) => v !== undefined).map(([k, v]) => `  - **${k}:** ${v}`);
+        const warn = formatWarnings(detectEscapeIssues(details));
+        return { content: [{ type: "text" as const, text: `[DRY RUN] Update iteration\n\n${lines.join("\n")}${warn}\n\nThis is a preview. Ask the user to confirm in their language before re-calling with dry_run=false.` }] };
+      }
+      const it = await client.updateIteration(group_id, iteration_iid, data);
+      const dates = `${it.start_date} → ${it.due_date}`;
+      const text = `Iteration updated: **${it.title}** (id:${it.id}, iid:${it.iid}) — ${it.state} — ${dates}\n  ${it.web_url}`;
+      return { content: [{ type: "text" as const, text: appendEscapeWarnings(text, data) }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("list_workitem_statuses", {
+    description: "List allowed Status widget values for a Work Item type in a group (GitLab 17+). Returns global IDs to pass as status_id to update_issue / update_epic.",
+    inputSchema: {
+      group_id: groupIdSchema,
+      work_item_type: z.enum(["ISSUE", "EPIC", "TASK", "INCIDENT", "REQUIREMENTS", "TEST_CASE", "OBJECTIVE", "KEY_RESULT", "TICKET"]).describe("Work item type to inspect."),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const statuses = await client.listWorkItemStatuses(args.group_id, args.work_item_type);
+      if (statuses.length === 0) {
+        return { content: [{ type: "text" as const, text: `No Status widget statuses found for ${args.work_item_type} in group ${args.group_id}. Requires GitLab 17+ with the Status widget enabled on this work item type.` }] };
+      }
+      const text = statuses
+        .sort((a, b) => a.position - b.position)
+        .map(s => `**${s.name}** — id: \`${s.id}\`${s.color ? ` — color: ${s.color}` : ""}${s.iconName ? ` — icon: ${s.iconName}` : ""}`)
+        .join("\n");
+      return { content: [{ type: "text" as const, text: `${statuses.length} allowed status(es) for ${args.work_item_type}:\n\n${text}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
   server.registerTool("create_label", {
     description: "Create a label in a group. dry_run=true by default.",
     inputSchema: {
@@ -210,7 +294,7 @@ export function registerUtilTools(server: McpServer, client: GitLabClient): void
       name: z.string().describe("Label name"),
       color: z.string().describe("Label color (hex, e.g. '#FF0000')"),
       description: z.string().optional().describe("Label description"),
-      dry_run: z.boolean().default(true).describe("Dry run mode (default: true)."),
+      dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
   }, async (args) => {
@@ -231,11 +315,11 @@ export function registerUtilTools(server: McpServer, client: GitLabClient): void
     description: "Update a label in a group. dry_run=true by default.",
     inputSchema: {
       group_id: groupIdSchema,
-      label_id: z.number().describe("Label ID"),
+      label_id: idNumber().describe("Label ID"),
       new_name: z.string().optional().describe("New label name"),
       color: z.string().optional().describe("New color (hex)"),
       description: z.string().optional().describe("New description"),
-      dry_run: z.boolean().default(true).describe("Dry run mode (default: true)."),
+      dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
   }, async (args) => {
@@ -260,8 +344,8 @@ export function registerUtilTools(server: McpServer, client: GitLabClient): void
     description: "Delete a label from a group. dry_run=true by default. This is destructive and cannot be undone.",
     inputSchema: {
       group_id: groupIdSchema,
-      label_id: z.number().describe("Label ID to delete"),
-      dry_run: z.boolean().default(true).describe("Dry run mode (default: true)."),
+      label_id: idNumber().describe("Label ID to delete"),
+      dry_run: dryRunSchema,
     },
     annotations: { readOnlyHint: false },
   }, async (args) => {
