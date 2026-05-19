@@ -58,10 +58,39 @@ export const LABEL_FRAGMENT = `
 `;
 
 // ---------------------------------------------------------------------------
+// Issue field builders (some fields are Premium/Ultimate only)
+// ---------------------------------------------------------------------------
+
+// `weight` and `epic` are Premium/Ultimate-only fields on the `Issue` type.
+// On GitLab CE/Free, requesting them is a hard parse error that rejects the
+// whole query — even fields that would otherwise work. Build issue selection
+// sets dynamically based on the detected tier.
+export function issueNodeFields(premium: boolean): string {
+  return `
+    id iid title description state webUrl
+    labels { nodes { title } }
+    milestone { ...MilestoneF }
+    assignees { nodes { ...UserF } }
+    author { ...UserF }
+    dueDate createdAt updatedAt closedAt
+    ${premium ? "weight epic { iid }" : ""}
+    projectId
+    timeEstimate totalTimeSpent humanTimeEstimate humanTotalTimeSpent
+  `;
+}
+
+// ---------------------------------------------------------------------------
 // Queries
 // ---------------------------------------------------------------------------
 
 export const Q_CURRENT_USER = `query { currentUser { id username name state avatarUrl webUrl } }`;
+
+// Schema introspection used to detect Premium/Ultimate at startup.
+// We look for `weight` on the `Issue` type — it's Premium-only and a reliable
+// signal for tier detection without needing admin scope.
+export const Q_ISSUE_TYPE_INTROSPECTION = `
+  query { __type(name: "Issue") { fields { name } } }
+`;
 
 export const Q_GROUPS = `
   query($search: String, $after: String) {
@@ -145,53 +174,55 @@ export const Q_EPIC_NOTES = `
   }
 `;
 
-export const Q_GROUP_ISSUES = `
-  ${USER_FRAGMENT}
-  ${MILESTONE_FRAGMENT}
-  query($fullPath: ID!, $state: IssuableState, $search: String, $labelName: [String!],
-        $milestoneTitle: [String!], $assigneeUsernames: [String!], $after: String) {
-    group(fullPath: $fullPath) {
-      issues(state: $state, search: $search, labelName: $labelName,
-             milestoneTitle: $milestoneTitle, assigneeUsernames: $assigneeUsernames,
-             first: 100, after: $after) {
-        pageInfo { hasNextPage endCursor }
-        nodes {
-          id iid title description state webUrl
-          labels { nodes { title } }
-          milestone { ...MilestoneF }
-          assignees { nodes { ...UserF } }
-          author { ...UserF }
-          dueDate createdAt updatedAt closedAt
-          weight
-          epic { iid }
-          projectId
-          timeEstimate totalTimeSpent humanTimeEstimate humanTotalTimeSpent
+export function qGroupIssues(premium: boolean): string {
+  return `
+    ${USER_FRAGMENT}
+    ${MILESTONE_FRAGMENT}
+    query($fullPath: ID!, $state: IssuableState, $search: String, $labelName: [String!],
+          $milestoneTitle: [String!], $assigneeUsernames: [String!], $after: String) {
+      group(fullPath: $fullPath) {
+        issues(state: $state, search: $search, labelName: $labelName,
+               milestoneTitle: $milestoneTitle, assigneeUsernames: $assigneeUsernames,
+               first: 100, after: $after) {
+          pageInfo { hasNextPage endCursor }
+          nodes { ${issueNodeFields(premium)} }
         }
       }
     }
-  }
-`;
+  `;
+}
 
-export const Q_ISSUE = `
-  ${USER_FRAGMENT}
-  ${MILESTONE_FRAGMENT}
-  query($projectPath: ID!, $iid: String!) {
-    project(fullPath: $projectPath) {
-      issue(iid: $iid) {
-        id iid title description state webUrl
-        labels { nodes { title } }
-        milestone { ...MilestoneF }
-        assignees { nodes { ...UserF } }
-        author { ...UserF }
-        dueDate createdAt updatedAt closedAt
-        weight
-        epic { iid }
-        projectId
-        timeEstimate totalTimeSpent humanTimeEstimate humanTotalTimeSpent
+export function qProjectIssues(premium: boolean): string {
+  return `
+    ${USER_FRAGMENT}
+    ${MILESTONE_FRAGMENT}
+    query($fullPath: ID!, $state: IssuableState, $search: String, $labelName: [String!],
+          $milestoneTitle: [String!], $assigneeUsernames: [String!], $after: String) {
+      project(fullPath: $fullPath) {
+        issues(state: $state, search: $search, labelName: $labelName,
+               milestoneTitle: $milestoneTitle, assigneeUsernames: $assigneeUsernames,
+               first: 100, after: $after) {
+          pageInfo { hasNextPage endCursor }
+          nodes { ${issueNodeFields(premium)} }
+        }
       }
     }
-  }
-`;
+  `;
+}
+
+export function qIssue(premium: boolean): string {
+  return `
+    ${USER_FRAGMENT}
+    ${MILESTONE_FRAGMENT}
+    query($projectPath: ID!, $iid: String!) {
+      project(fullPath: $projectPath) {
+        issue(iid: $iid) {
+          ${issueNodeFields(premium)}
+        }
+      }
+    }
+  `;
+}
 
 export const Q_ISSUE_NOTES = `
   ${USER_FRAGMENT}
@@ -409,45 +440,31 @@ export const M_UPDATE_MILESTONE = `
   }
 `;
 
-export const M_CREATE_ISSUE = `
-  ${USER_FRAGMENT}
-  ${MILESTONE_FRAGMENT}
-  mutation($input: CreateIssueInput!) {
-    createIssue(input: $input) {
-      issue {
-        id iid title description state webUrl
-        labels { nodes { title } }
-        milestone { ...MilestoneF }
-        assignees { nodes { ...UserF } }
-        author { ...UserF }
-        dueDate createdAt updatedAt closedAt
-        weight epic { iid } projectId
-        timeEstimate totalTimeSpent humanTimeEstimate humanTotalTimeSpent
+export function mCreateIssue(premium: boolean): string {
+  return `
+    ${USER_FRAGMENT}
+    ${MILESTONE_FRAGMENT}
+    mutation($input: CreateIssueInput!) {
+      createIssue(input: $input) {
+        issue { ${issueNodeFields(premium)} }
+        errors
       }
-      errors
     }
-  }
-`;
+  `;
+}
 
-export const M_UPDATE_ISSUE = `
-  ${USER_FRAGMENT}
-  ${MILESTONE_FRAGMENT}
-  mutation($input: UpdateIssueInput!) {
-    updateIssue(input: $input) {
-      issue {
-        id iid title description state webUrl
-        labels { nodes { title } }
-        milestone { ...MilestoneF }
-        assignees { nodes { ...UserF } }
-        author { ...UserF }
-        dueDate createdAt updatedAt closedAt
-        weight epic { iid } projectId
-        timeEstimate totalTimeSpent humanTimeEstimate humanTotalTimeSpent
+export function mUpdateIssue(premium: boolean): string {
+  return `
+    ${USER_FRAGMENT}
+    ${MILESTONE_FRAGMENT}
+    mutation($input: UpdateIssueInput!) {
+      updateIssue(input: $input) {
+        issue { ${issueNodeFields(premium)} }
+        errors
       }
-      errors
     }
-  }
-`;
+  `;
+}
 
 export const M_CREATE_NOTE = `
   ${USER_FRAGMENT}

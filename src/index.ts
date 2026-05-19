@@ -74,7 +74,11 @@ async function main(): Promise<void> {
     try {
       const user = await client.getCurrentUser();
       const mode = readOnly ? "read-only (forced by GITLAB_READ_ONLY=true)" : "read-write";
-      console.error(`@wanadev/mcp-gitlab: connected as @${user.username} on ${baseUrl} [${mode}]`);
+      // Detect Premium/Ultimate vs Free/CE — gates `weight` / `epic` fields
+      // in issue queries (requesting them on CE rejects the whole query).
+      const premium = await client.detectPremium();
+      const tier = premium ? "Premium/Ultimate" : "Free/CE";
+      console.error(`@wanadev/mcp-gitlab: connected as @${user.username} on ${baseUrl} [${mode}, ${tier}]`);
     } catch (error) {
       const msg = (error as Error).message;
       if (msg.includes("401")) {
