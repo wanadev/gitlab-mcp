@@ -264,6 +264,22 @@ export function registerUtilTools(server: McpServer, client: GitLabClient): void
     }
   });
 
+  server.registerTool("get_work_item_type_id", {
+    description: "Discover the global ID of a Work Item type (e.g. EPIC, ISSUE, TASK) for a given namespace. Required as workItemTypeId on workItemCreate. IDs vary per GitLab instance and version, so call this once per (namespace, type) and cache the result.",
+    inputSchema: {
+      namespace_path: z.string().describe("Group or project full path (e.g. 'wanadev' or 'wanadev/mcp-gitlab')."),
+      type_name: z.enum(["ISSUE", "EPIC", "TASK", "INCIDENT", "REQUIREMENTS", "TEST_CASE", "OBJECTIVE", "KEY_RESULT", "TICKET"]).describe("Work item type to look up."),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const wit = await client.getWorkItemTypeId(args.namespace_path, args.type_name);
+      return { content: [{ type: "text" as const, text: `${wit.name} → id: \`${wit.id}\`` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
   server.registerTool("list_workitem_statuses", {
     description: "List allowed Status widget values for a Work Item type in a group (GitLab 17+). Returns global IDs to pass as status_id to update_issue / update_epic.",
     inputSchema: {

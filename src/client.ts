@@ -16,6 +16,7 @@ import {
   M_UPDATE_NOTE, M_DESTROY_NOTE,
   Q_EPIC_WORK_ITEM_ID, Q_WORK_ITEM_WIDGETS, Q_ISSUE_WORK_ITEM_ID,
   M_WORK_ITEM_UPDATE, M_WORK_ITEM_ADD_LINKED, Q_WORK_ITEM_STATUSES,
+  Q_WORK_ITEM_TYPE_ID,
   mapUser, mapEpic, mapIssue, mapMilestone, mapMergeRequest,
   mapGroup, mapProject, mapMember, mapLabel, mapNote, mapBoard, mapIteration,
 } from "./graphql.js";
@@ -454,6 +455,17 @@ export class GitLabClient {
   // ---------------------------------------------------------------------------
   // Status widget (issue #41) — GitLab 17+ Work Items
   // ---------------------------------------------------------------------------
+
+  async getWorkItemTypeId(
+    namespacePath: string,
+    typeName: "ISSUE" | "EPIC" | "TASK" | "INCIDENT" | "REQUIREMENTS" | "TEST_CASE" | "OBJECTIVE" | "KEY_RESULT" | "TICKET",
+  ): Promise<{ id: string; name: string }> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await this.graphql<any>(Q_WORK_ITEM_TYPE_ID, { fullPath: namespacePath, name: typeName });
+    const node = data.namespace?.workItemTypes?.nodes?.[0];
+    if (!node?.id) throw new Error(`Work item type ${typeName} not found for namespace ${namespacePath}`);
+    return { id: node.id, name: node.name };
+  }
 
   async listWorkItemStatuses(
     groupId: string,
