@@ -45,6 +45,7 @@ const EXPECTED_TOOLS = [
   "create_merge_request", "update_merge_request", "merge_merge_request", "approve_merge_request",
   "rebase_merge_request",
   "list_mr_notes", "add_mr_note", "update_mr_note", "delete_mr_note", "get_mr_diff",
+  "create_mr_discussion", "resolve_mr_discussion",
   // CI/CD
   "list_pipelines", "get_pipeline", "get_job_log", "retry_pipeline", "cancel_pipeline",
   // Branches & Repository
@@ -70,6 +71,7 @@ const WRITE_TOOLS = [
   "create_iteration", "update_iteration",
   "create_merge_request", "update_merge_request", "merge_merge_request", "approve_merge_request",
   "rebase_merge_request",
+  "create_mr_discussion", "resolve_mr_discussion",
   "add_mr_note", "update_mr_note", "delete_mr_note",
   "retry_pipeline", "cancel_pipeline",
   "create_branch",

@@ -894,7 +894,68 @@ export class GitLabClient {
     return (await response.json()) as GitLabNote;
   }
 
-  async getMRDiff(projectId: number, mrIid: number): Promise<{ old_path: string; new_path: string; additions: number; deletions: number }[]> {
+  async createMRDiscussion(
+    projectId: number,
+    mrIid: number,
+    body: string,
+    position: {
+      base_sha: string;
+      head_sha: string;
+      start_sha: string;
+      file_path: string;
+      new_line?: number;
+      old_line?: number;
+    },
+  ): Promise<{ id: string; resolved: boolean; notes: { id: number; body: string }[] }> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/merge_requests/${mrIid}/discussions`, this.baseUrl);
+    const restPosition: Record<string, unknown> = {
+      position_type: "text",
+      base_sha: position.base_sha,
+      head_sha: position.head_sha,
+      start_sha: position.start_sha,
+      new_path: position.file_path,
+      old_path: position.file_path,
+    };
+    if (position.new_line != null) restPosition["new_line"] = position.new_line;
+    if (position.old_line != null) restPosition["old_line"] = position.old_line;
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify({ body, position: restPosition }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as { id: string; resolved: boolean; notes: { id: number; body: string }[] };
+  }
+
+  async resolveMRDiscussion(
+    projectId: number,
+    mrIid: number,
+    discussionId: string,
+    resolved: boolean,
+  ): Promise<void> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/merge_requests/${mrIid}/discussions/${discussionId}`, this.baseUrl);
+    url.searchParams.set("resolved", String(resolved));
+    const response = await fetch(url.toString(), {
+      method: "PUT",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+  }
+
+  async getMRDiff(projectId: number, mrIid: number): Promise<{
+    diff_refs: { base_sha: string | null; head_sha: string | null; start_sha: string | null };
+    changes: { old_path: string; new_path: string; additions: number; deletions: number }[];
+  }> {
     // REST — diffStats not easily available via GraphQL
     const url = new URL(`/api/v4/projects/${projectId}/merge_requests/${mrIid}/changes`, this.baseUrl);
     url.searchParams.set("access_raw_diffs", "false");
@@ -909,13 +970,20 @@ export class GitLabClient {
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = (await response.json()) as any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (data.changes ?? []).map((c: any) => ({
-      old_path: c.old_path,
-      new_path: c.new_path,
-      additions: (c.diff?.match(/^\+/gm)?.length ?? 0),
-      deletions: (c.diff?.match(/^-/gm)?.length ?? 0),
-    }));
+    return {
+      diff_refs: {
+        base_sha: data.diff_refs?.base_sha ?? null,
+        head_sha: data.diff_refs?.head_sha ?? null,
+        start_sha: data.diff_refs?.start_sha ?? null,
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      changes: (data.changes ?? []).map((c: any) => ({
+        old_path: c.old_path,
+        new_path: c.new_path,
+        additions: (c.diff?.match(/^\+/gm)?.length ?? 0),
+        deletions: (c.diff?.match(/^-/gm)?.length ?? 0),
+      })),
+    };
   }
 
   // ---------------------------------------------------------------------------
