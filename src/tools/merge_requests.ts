@@ -300,7 +300,7 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
   });
 
   server.registerTool("get_mr_diff", {
-    description: "Get the file changes (diff summary) of a merge request.",
+    description: "Get the file changes (diff summary) of a merge request. Returns diff_refs (base_sha/head_sha/start_sha) needed to create line-positioned discussions via create_mr_discussion.",
     inputSchema: {
       project_id: idNumber().describe("Project ID"),
       mr_iid: idNumber().describe("MR IID"),
@@ -308,14 +308,81 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
     annotations: { readOnlyHint: true },
   }, async (args) => {
     try {
-      const changes = await client.getMRDiff(args.project_id, args.mr_iid);
+      const { changes, diff_refs } = await client.getMRDiff(args.project_id, args.mr_iid);
       if (changes.length === 0) return { content: [{ type: "text" as const, text: "No file changes in this MR." }] };
       const text = changes.map(c => {
         const path = c.old_path === c.new_path ? c.new_path : `${c.old_path} → ${c.new_path}`;
         return `**${path}** (+${c.additions} -${c.deletions})`;
       }).join("\n");
       const total = changes.reduce((acc, c) => ({ add: acc.add + c.additions, del: acc.del + c.deletions }), { add: 0, del: 0 });
-      return { content: [{ type: "text" as const, text: `${changes.length} file(s) changed (+${total.add} -${total.del}):\n\n${text}` }] };
+      const refsBlock = `\n\n**diff_refs** (use for create_mr_discussion):\n  - base_sha: \`${diff_refs.base_sha ?? "(unknown)"}\`\n  - head_sha: \`${diff_refs.head_sha ?? "(unknown)"}\`\n  - start_sha: \`${diff_refs.start_sha ?? "(unknown)"}\``;
+      return { content: [{ type: "text" as const, text: `${changes.length} file(s) changed (+${total.add} -${total.del}):\n\n${text}${refsBlock}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("create_mr_discussion", {
+    description: "Create a code-review comment on a specific line in an MR's diff (a 'discussion' in GitLab terminology). Requires the diff_refs (base_sha, head_sha, start_sha) returned by get_mr_diff. Provide exactly one of new_line / old_line. dry_run=true by default.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+      mr_iid: idNumber().describe("MR IID"),
+      body: z.string().describe("Comment body (Markdown)"),
+      file_path: z.string().describe("File path the comment targets (same value used for new_path and old_path)"),
+      base_sha: z.string().describe("base_sha from get_mr_diff.diff_refs"),
+      head_sha: z.string().describe("head_sha from get_mr_diff.diff_refs"),
+      start_sha: z.string().describe("start_sha from get_mr_diff.diff_refs"),
+      new_line: idNumber().optional().describe("Line number in the new file (post-change). Provide this for additions / context lines."),
+      old_line: idNumber().optional().describe("Line number in the old file (pre-change). Provide this for deletions."),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.new_line == null && args.old_line == null) {
+        return { content: [{ type: "text" as const, text: "Erreur: provide at least one of new_line or old_line." }], isError: true };
+      }
+      if (args.dry_run) {
+        return dryRunResponse("Create MR discussion", {
+          project_id: args.project_id, mr_iid: args.mr_iid,
+          file: args.file_path, new_line: args.new_line, old_line: args.old_line,
+          body: args.body,
+        });
+      }
+      const discussion = await client.createMRDiscussion(
+        args.project_id, args.mr_iid, args.body,
+        {
+          base_sha: args.base_sha, head_sha: args.head_sha, start_sha: args.start_sha,
+          file_path: args.file_path,
+          new_line: args.new_line, old_line: args.old_line,
+        },
+      );
+      return { content: [{ type: "text" as const, text: `Discussion created on MR !${args.mr_iid}.\n\n- **discussion_id:** \`${discussion.id}\`\n- **resolved:** ${discussion.resolved}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("resolve_mr_discussion", {
+    description: "Mark an MR discussion as resolved (or unresolved). dry_run=true by default.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+      mr_iid: idNumber().describe("MR IID"),
+      discussion_id: z.string().describe("Discussion ID (from create_mr_discussion or by listing discussions on the MR)"),
+      resolved: z.boolean().optional().describe("true to resolve, false to unresolve. Default: true."),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      const target = args.resolved ?? true;
+      if (args.dry_run) {
+        return dryRunResponse(target ? "Resolve MR discussion" : "Unresolve MR discussion", {
+          project_id: args.project_id, mr_iid: args.mr_iid, discussion_id: args.discussion_id,
+        });
+      }
+      await client.resolveMRDiscussion(args.project_id, args.mr_iid, args.discussion_id, target);
+      return { content: [{ type: "text" as const, text: `Discussion ${args.discussion_id} on MR !${args.mr_iid} ${target ? "resolved" : "unresolved"}.` }] };
     } catch (error) {
       return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
     }
