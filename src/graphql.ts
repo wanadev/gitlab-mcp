@@ -508,6 +508,21 @@ export const M_DESTROY_NOTE = `
   }
 `;
 
+// Work item type ID discovery (issue #49). The ID is required as
+// `workItemTypeId` on `workItemCreate`. IDs vary per instance and per
+// GitLab version, so consumers must look them up at runtime. Uses
+// `namespace(fullPath:)` instead of `group(fullPath:)` so the same query
+// resolves project- and group-scoped namespaces.
+export const Q_WORK_ITEM_TYPE_ID = `
+  query($fullPath: ID!, $name: IssuableType!) {
+    namespace(fullPath: $fullPath) {
+      workItemTypes(name: $name) {
+        nodes { id name }
+      }
+    }
+  }
+`;
+
 // Status widget (issue #41) — GitLab 17+ Work Items
 export const Q_WORK_ITEM_STATUSES = `
   query($fullPath: ID!, $name: IssuableType!) {
