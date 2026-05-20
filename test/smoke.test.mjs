@@ -58,6 +58,7 @@ const EXPECTED_TOOLS = [
   "list_workitem_statuses", "get_work_item_type_id",
   "upload_file",
   "search_issues", "search_merge_requests", "search_blobs",
+  "add_group_member", "add_project_member", "update_member_access_level", "remove_member",
   "search_users", "get_current_user",
 ];
 
@@ -80,6 +81,7 @@ const WRITE_TOOLS = [
   "create_file", "update_file", "delete_file", "commit_files",
   "create_label", "update_label", "delete_label",
   "upload_file",
+  "add_group_member", "add_project_member", "update_member_access_level", "remove_member",
 ];
 
 const GROUP_SCOPED_TOOLS = [

@@ -381,6 +381,92 @@ export function registerUtilTools(server: McpServer, client: GitLabClient): void
     }
   });
 
+  // Members management (issue #54). Access levels: 10=Guest, 20=Reporter,
+  // 30=Developer, 40=Maintainer, 50=Owner.
+  const accessLevelSchema = z.enum(["10", "20", "30", "40", "50"]).describe("Access level: 10=Guest, 20=Reporter, 30=Developer, 40=Maintainer, 50=Owner.");
+
+  server.registerTool("add_group_member", {
+    description: "Add a user to a group with a given access level. dry_run=true by default.",
+    inputSchema: {
+      group_id: groupIdSchema,
+      user_id: idNumber().describe("Numeric user ID (resolve from search_users)"),
+      access_level: accessLevelSchema,
+      expires_at: z.string().optional().describe("Optional expiration date (YYYY-MM-DD)"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) return dryRunResponse("Add group member", { group_id: args.group_id, user_id: args.user_id, access_level: args.access_level, expires_at: args.expires_at });
+      const member = await client.addMember({ type: "group", id: args.group_id }, args.user_id, parseInt(args.access_level, 10), args.expires_at);
+      return { content: [{ type: "text" as const, text: `Added @${member.username} to group ${args.group_id} at access_level=${args.access_level}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("add_project_member", {
+    description: "Add a user to a project with a given access level. dry_run=true by default.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+      user_id: idNumber().describe("Numeric user ID (resolve from search_users)"),
+      access_level: accessLevelSchema,
+      expires_at: z.string().optional().describe("Optional expiration date (YYYY-MM-DD)"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) return dryRunResponse("Add project member", { project_id: args.project_id, user_id: args.user_id, access_level: args.access_level, expires_at: args.expires_at });
+      const member = await client.addMember({ type: "project", id: args.project_id }, args.user_id, parseInt(args.access_level, 10), args.expires_at);
+      return { content: [{ type: "text" as const, text: `Added @${member.username} to project ${args.project_id} at access_level=${args.access_level}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("update_member_access_level", {
+    description: "Change a member's access level on a group or project. dry_run=true by default.",
+    inputSchema: {
+      scope: z.enum(["group", "project"]).describe("'group' or 'project'"),
+      id: z.string().describe("Group ID/path or numeric project ID"),
+      user_id: idNumber().describe("Numeric user ID"),
+      access_level: accessLevelSchema,
+      expires_at: z.string().optional().describe("Optional expiration date (YYYY-MM-DD)"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) return dryRunResponse("Update member access level", { scope: args.scope, id: args.id, user_id: args.user_id, access_level: args.access_level });
+      const target = args.scope === "group" ? { type: "group" as const, id: args.id } : { type: "project" as const, id: parseInt(args.id, 10) };
+      const member = await client.updateMemberAccessLevel(target, args.user_id, parseInt(args.access_level, 10), args.expires_at);
+      return { content: [{ type: "text" as const, text: `@${member.username} now at access_level=${args.access_level} on ${args.scope} ${args.id}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("remove_member", {
+    description: "Remove a user from a group or project. dry_run=true by default. This is destructive.",
+    inputSchema: {
+      scope: z.enum(["group", "project"]).describe("'group' or 'project'"),
+      id: z.string().describe("Group ID/path or numeric project ID"),
+      user_id: idNumber().describe("Numeric user ID to remove"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) return dryRunResponse("Remove member", { scope: args.scope, id: args.id, user_id: args.user_id });
+      const target = args.scope === "group" ? { type: "group" as const, id: args.id } : { type: "project" as const, id: parseInt(args.id, 10) };
+      await client.removeMember(target, args.user_id);
+      return { content: [{ type: "text" as const, text: `User ${args.user_id} removed from ${args.scope} ${args.id}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
   // Global search (issue #52) — three scope-specific tools backed by /search.
   const scopeSchema = z.enum(["project", "group"]).describe("Search scope: 'project' (id is numeric Project ID) or 'group' (id is group ID or full path).");
 
