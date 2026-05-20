@@ -179,10 +179,12 @@ export function qGroupIssues(premium: boolean): string {
     ${USER_FRAGMENT}
     ${MILESTONE_FRAGMENT}
     query($fullPath: ID!, $state: IssuableState, $search: String, $labelName: [String!],
-          $milestoneTitle: [String!], $assigneeUsernames: [String!], $after: String) {
+          $milestoneTitle: [String!], $assigneeUsernames: [String!],
+          $iterationId: [ID!], $after: String) {
       group(fullPath: $fullPath) {
         issues(state: $state, search: $search, labelName: $labelName,
                milestoneTitle: $milestoneTitle, assigneeUsernames: $assigneeUsernames,
+               iterationId: $iterationId,
                first: 100, after: $after) {
           pageInfo { hasNextPage endCursor }
           nodes { ${issueNodeFields(premium)} }
@@ -197,10 +199,12 @@ export function qProjectIssues(premium: boolean): string {
     ${USER_FRAGMENT}
     ${MILESTONE_FRAGMENT}
     query($fullPath: ID!, $state: IssuableState, $search: String, $labelName: [String!],
-          $milestoneTitle: [String!], $assigneeUsernames: [String!], $after: String) {
+          $milestoneTitle: [String!], $assigneeUsernames: [String!],
+          $iterationId: [ID!], $after: String) {
       project(fullPath: $fullPath) {
         issues(state: $state, search: $search, labelName: $labelName,
                milestoneTitle: $milestoneTitle, assigneeUsernames: $assigneeUsernames,
+               iterationId: $iterationId,
                first: 100, after: $after) {
           pageInfo { hasNextPage endCursor }
           nodes { ${issueNodeFields(premium)} }

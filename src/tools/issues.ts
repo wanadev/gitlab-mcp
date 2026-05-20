@@ -66,6 +66,7 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
       labels: z.string().optional().describe("Labels (separes par virgule)"),
       milestone: z.string().optional().describe("Nom du milestone"),
       assignee_username: z.string().optional().describe("Nom d'utilisateur de l'assignee"),
+      iteration_id: idNumber().optional().describe("Numeric iteration (sprint) ID. Premium/Ultimate only. Get IDs from list_iterations."),
       order_by: z.enum(["created_at", "updated_at", "priority", "due_date", "label_priority", "weight"]).optional().describe("Trier par champ"),
       sort: z.enum(["asc", "desc"]).optional().describe("Ordre de tri"),
     },
@@ -223,7 +224,7 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
   });
 
   server.registerTool("list_project_issues", {
-    description: "List issues for a specific project (not group). Filter by state, labels, milestone, assignee.",
+    description: "List issues for a specific project (not group). Filter by state, labels, milestone, assignee, iteration.",
     inputSchema: {
       project_id: idNumber().describe("Project ID"),
       state: z.enum(["opened", "closed", "all"]).optional().describe("Filter by state"),
@@ -231,6 +232,7 @@ export function registerIssueTools(server: McpServer, client: GitLabClient): voi
       labels: z.string().optional().describe("Labels (comma-separated)"),
       milestone: z.string().optional().describe("Milestone name"),
       assignee_username: z.string().optional().describe("Assignee username"),
+      iteration_id: idNumber().optional().describe("Numeric iteration (sprint) ID. Premium/Ultimate only."),
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
