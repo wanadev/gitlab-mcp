@@ -33,6 +33,7 @@ const EXPECTED_TOOLS = [
   // Work Items
   "get_epic_widgets", "set_epic_milestone", "set_epic_health_status",
   "set_issue_health_status", "set_epic_iteration", "add_linked_item",
+  "get_work_item_id", "link_work_items", "unlink_work_items",
   // Issues
   "list_issues", "list_project_issues", "get_issue",
   "create_issue", "update_issue", "close_issue", "reopen_issue",
@@ -62,6 +63,7 @@ const WRITE_TOOLS = [
   "add_issue_to_epic", "add_epic_note", "update_epic_note", "delete_epic_note",
   "set_epic_milestone", "set_epic_health_status", "set_issue_health_status",
   "set_epic_iteration", "add_linked_item",
+  "link_work_items", "unlink_work_items",
   "create_issue", "update_issue", "close_issue", "reopen_issue",
   "add_issue_note", "update_issue_note", "delete_issue_note",
   "create_milestone", "update_milestone", "close_milestone",
