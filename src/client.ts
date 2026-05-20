@@ -802,6 +802,22 @@ export class GitLabClient {
     }
   }
 
+  async rebaseMergeRequest(projectId: number, mrIid: number, skipCi?: boolean): Promise<{ rebase_in_progress: boolean }> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/merge_requests/${mrIid}/rebase`, this.baseUrl);
+    if (skipCi) url.searchParams.set("skip_ci", "true");
+    const response = await fetch(url.toString(), {
+      method: "PUT",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as { rebase_in_progress: boolean };
+  }
+
   async listMRNotes(projectId: number, mrIid: number): Promise<GitLabNote[]> {
     const projectPath = await this.resolveProjectPath(projectId);
     const query = Q_ISSUE_NOTES
