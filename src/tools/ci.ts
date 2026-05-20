@@ -192,6 +192,70 @@ export function registerCITools(server: McpServer, client: GitLabClient): void {
     }
   });
 
+  // Protected branches (issue #55).
+  server.registerTool("list_protected_branches", {
+    description: "List protected branches for a project, with their push/merge/unprotect access levels.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const branches = await client.listProtectedBranches(args.project_id);
+      if (branches.length === 0) return { content: [{ type: "text" as const, text: "No protected branches." }] };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const text = (branches as any[]).map(b =>
+        `**${b.name}**\n  push: ${b.push_access_levels?.[0]?.access_level_description ?? "?"}\n  merge: ${b.merge_access_levels?.[0]?.access_level_description ?? "?"}`,
+      ).join("\n\n");
+      return { content: [{ type: "text" as const, text: `${branches.length} protected branch(es):\n\n${text}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("protect_branch", {
+    description: "Protect a branch with given push/merge/unprotect access levels. Access levels: 0=NoAccess, 30=Developer, 40=Maintainer, 60=Admin. dry_run=true by default.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+      name: z.string().describe("Branch name or wildcard pattern (e.g. 'main', 'release/*')"),
+      push_access_level: idNumber().optional().describe("Minimum role required to push (default: 40=Maintainer)"),
+      merge_access_level: idNumber().optional().describe("Minimum role required to merge (default: 40=Maintainer)"),
+      unprotect_access_level: idNumber().optional().describe("Minimum role required to unprotect (default: 40=Maintainer)"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) return dryRunResponse("Protect branch", { project_id: args.project_id, name: args.name, push: args.push_access_level, merge: args.merge_access_level, unprotect: args.unprotect_access_level });
+      await client.protectBranch(args.project_id, args.name, {
+        push_access_level: args.push_access_level,
+        merge_access_level: args.merge_access_level,
+        unprotect_access_level: args.unprotect_access_level,
+      });
+      return { content: [{ type: "text" as const, text: `Branch ${args.name} now protected on project ${args.project_id}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("unprotect_branch", {
+    description: "Remove branch protection rules from a branch. dry_run=true by default.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+      name: z.string().describe("Branch name or wildcard pattern to unprotect"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) return dryRunResponse("Unprotect branch", { project_id: args.project_id, name: args.name });
+      await client.unprotectBranch(args.project_id, args.name);
+      return { content: [{ type: "text" as const, text: `Branch ${args.name} unprotected.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
   server.registerTool("create_file", {
     description: "Create a new file in a repository. Rejects if the file already exists. dry_run=true by default.",
     inputSchema: {

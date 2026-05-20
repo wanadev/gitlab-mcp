@@ -1538,6 +1538,131 @@ export class GitLabClient {
     };
   }
 
+  // Protected branches + MR approval rules (issue #55). Both are project-level
+  // governance APIs, kept together for symmetry. Access levels: 0=NoAccess,
+  // 30=Developer, 40=Maintainer, 60=Admin.
+
+  async listProtectedBranches(projectId: number): Promise<unknown[]> {
+    const url = new URL(`/api/v4/projects/${projectId}/protected_branches`, this.baseUrl);
+    url.searchParams.set("per_page", "100");
+    const response = await fetch(url.toString(), {
+      method: "GET", headers: { "PRIVATE-TOKEN": this.token }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error(`GitLab ${response.status}`);
+    return (await response.json()) as unknown[];
+  }
+
+  async protectBranch(
+    projectId: number,
+    name: string,
+    opts?: { push_access_level?: number; merge_access_level?: number; unprotect_access_level?: number },
+  ): Promise<unknown> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/protected_branches`, this.baseUrl);
+    const body: Record<string, unknown> = { name };
+    if (opts?.push_access_level != null) body["push_access_level"] = opts.push_access_level;
+    if (opts?.merge_access_level != null) body["merge_access_level"] = opts.merge_access_level;
+    if (opts?.unprotect_access_level != null) body["unprotect_access_level"] = opts.unprotect_access_level;
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return await response.json();
+  }
+
+  async unprotectBranch(projectId: number, name: string): Promise<void> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/protected_branches/${encodeURIComponent(name)}`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "DELETE", headers: { "PRIVATE-TOKEN": this.token }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok && response.status !== 204) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+  }
+
+  async listMRApprovalRules(projectId: number): Promise<unknown[]> {
+    const url = new URL(`/api/v4/projects/${projectId}/approval_rules`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "GET", headers: { "PRIVATE-TOKEN": this.token }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error(`GitLab ${response.status}`);
+    return (await response.json()) as unknown[];
+  }
+
+  async createMRApprovalRule(
+    projectId: number,
+    data: {
+      name: string;
+      approvals_required: number;
+      rule_type?: "regular" | "any_approver" | "code_owner";
+      user_ids?: number[];
+      group_ids?: number[];
+      protected_branch_ids?: number[];
+      applies_to_all_protected_branches?: boolean;
+    },
+  ): Promise<unknown> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/approval_rules`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return await response.json();
+  }
+
+  async updateMRApprovalRule(
+    projectId: number,
+    ruleId: number,
+    data: {
+      name?: string;
+      approvals_required?: number;
+      user_ids?: number[];
+      group_ids?: number[];
+      protected_branch_ids?: number[];
+      applies_to_all_protected_branches?: boolean;
+    },
+  ): Promise<unknown> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/approval_rules/${ruleId}`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "PUT",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return await response.json();
+  }
+
+  async deleteMRApprovalRule(projectId: number, ruleId: number): Promise<void> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/approval_rules/${ruleId}`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "DELETE", headers: { "PRIVATE-TOKEN": this.token }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok && response.status !== 204) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+  }
+
   // Members management (issue #54). Same REST shape for groups and projects,
   // distinguished by the base path.
   private membersBasePath(target: { type: "group"; id: string } | { type: "project"; id: number }): string {
