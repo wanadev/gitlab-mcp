@@ -1444,6 +1444,36 @@ export class GitLabClient {
     };
   }
 
+  // Global search (issue #52). REST /projects/:id/search and /groups/:id/search
+  // with `scope=` parameter. Single helper, three exposed tools (one per scope).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async searchScope(
+    scope: "issues" | "merge_requests" | "blobs",
+    target: { type: "project"; id: number } | { type: "group"; id: string },
+    query: string,
+    extras?: { ref?: string; state?: string },
+  ): Promise<unknown[]> {
+    const base = target.type === "project"
+      ? `/api/v4/projects/${target.id}/search`
+      : `/api/v4/groups/${encodeURIComponent(target.id)}/search`;
+    const url = new URL(base, this.baseUrl);
+    url.searchParams.set("scope", scope);
+    url.searchParams.set("search", query);
+    url.searchParams.set("per_page", "50");
+    if (extras?.ref) url.searchParams.set("ref", extras.ref);
+    if (extras?.state) url.searchParams.set("state", extras.state);
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as unknown[];
+  }
+
   async searchUsers(query: string): Promise<GitLabUser[]> {
     // REST — no good GraphQL equivalent for global user search
     const url = new URL("/api/v4/users", this.baseUrl);

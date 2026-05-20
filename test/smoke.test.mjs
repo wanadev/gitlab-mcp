@@ -56,6 +56,7 @@ const EXPECTED_TOOLS = [
   "list_boards", "list_iterations", "create_iteration", "update_iteration",
   "list_workitem_statuses", "get_work_item_type_id",
   "upload_file",
+  "search_issues", "search_merge_requests", "search_blobs",
   "search_users", "get_current_user",
 ];
 

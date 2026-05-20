@@ -381,6 +381,80 @@ export function registerUtilTools(server: McpServer, client: GitLabClient): void
     }
   });
 
+  // Global search (issue #52) — three scope-specific tools backed by /search.
+  const scopeSchema = z.enum(["project", "group"]).describe("Search scope: 'project' (id is numeric Project ID) or 'group' (id is group ID or full path).");
+
+  server.registerTool("search_issues", {
+    description: "Search issues by full-text query within a project or group. Maps to GET /:scope/:id/search?scope=issues.",
+    inputSchema: {
+      scope: scopeSchema,
+      id: z.string().describe("Project ID (numeric, as a string) or group ID/path"),
+      query: z.string().describe("Search query"),
+      state: z.enum(["opened", "closed", "all"]).optional().describe("Filter by state"),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const target = args.scope === "project" ? { type: "project" as const, id: parseInt(args.id, 10) } : { type: "group" as const, id: args.id };
+      const results = await client.searchScope("issues", target, args.query, { state: args.state });
+      if (results.length === 0) return { content: [{ type: "text" as const, text: "No issues matched." }] };
+      const text = (results as Array<{ iid: number; project_id: number; title: string; state: string; web_url: string }>)
+        .map(r => `**${r.title}** (project:${r.project_id} #${r.iid}, ${r.state})\n  ${r.web_url}`)
+        .join("\n\n");
+      return { content: [{ type: "text" as const, text: `${results.length} issue(s) matched:\n\n${text}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("search_merge_requests", {
+    description: "Search merge requests by full-text query within a project or group. Maps to GET /:scope/:id/search?scope=merge_requests.",
+    inputSchema: {
+      scope: scopeSchema,
+      id: z.string().describe("Project ID (numeric, as a string) or group ID/path"),
+      query: z.string().describe("Search query"),
+      state: z.enum(["opened", "closed", "merged", "all"]).optional().describe("Filter by state"),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const target = args.scope === "project" ? { type: "project" as const, id: parseInt(args.id, 10) } : { type: "group" as const, id: args.id };
+      const results = await client.searchScope("merge_requests", target, args.query, { state: args.state });
+      if (results.length === 0) return { content: [{ type: "text" as const, text: "No MRs matched." }] };
+      const text = (results as Array<{ iid: number; project_id: number; title: string; state: string; web_url: string }>)
+        .map(r => `**${r.title}** (project:${r.project_id} !${r.iid}, ${r.state})\n  ${r.web_url}`)
+        .join("\n\n");
+      return { content: [{ type: "text" as const, text: `${results.length} MR(s) matched:\n\n${text}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("search_blobs", {
+    description: "Search code/file contents by full-text query within a project or group. Returns matching blobs with line context. Maps to GET /:scope/:id/search?scope=blobs.",
+    inputSchema: {
+      scope: scopeSchema,
+      id: z.string().describe("Project ID (numeric, as a string) or group ID/path"),
+      query: z.string().describe("Search query"),
+      ref: z.string().optional().describe("Branch or commit to search (project scope only). Default: project's default branch."),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const target = args.scope === "project" ? { type: "project" as const, id: parseInt(args.id, 10) } : { type: "group" as const, id: args.id };
+      const results = await client.searchScope("blobs", target, args.query, { ref: args.ref });
+      if (results.length === 0) return { content: [{ type: "text" as const, text: "No code matches." }] };
+      const text = (results as Array<{ path: string; project_id: number; startline: number; data: string; ref: string }>)
+        .slice(0, 50)
+        .map(r => `**${r.path}** (project:${r.project_id}, ${r.ref}:${r.startline})\n\`\`\`\n${r.data.slice(0, 300)}\n\`\`\``)
+        .join("\n\n");
+      const note = results.length > 50 ? `\n\n(showing first 50 of ${results.length})` : "";
+      return { content: [{ type: "text" as const, text: `${results.length} blob(s) matched:\n\n${text}${note}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
   server.registerTool("upload_file", {
     description: "Upload a file to a project so it can be embedded in an issue, MR, or epic description. Returns the Markdown snippet GitLab expects (e.g. ![alt](/uploads/...)). Provide exactly one of file_path (read from local disk) or file_base64 (inline data). dry_run=true by default.",
     inputSchema: {
