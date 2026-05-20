@@ -192,6 +192,114 @@ export function registerCITools(server: McpServer, client: GitLabClient): void {
     }
   });
 
+  server.registerTool("create_file", {
+    description: "Create a new file in a repository. Rejects if the file already exists. dry_run=true by default.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+      file_path: z.string().describe("File path in repository"),
+      branch: z.string().describe("Branch to commit to"),
+      content: z.string().describe("File content"),
+      commit_message: z.string().describe("Commit message"),
+      encoding: z.enum(["text", "base64"]).optional().describe("Content encoding. Default: text."),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) return dryRunResponse("Create file", { project_id: args.project_id, file_path: args.file_path, branch: args.branch, commit_message: args.commit_message, content_bytes: args.content.length });
+      const { file_path, dry_run, project_id, ...rest } = args;
+      void dry_run;
+      void file_path;
+      void project_id;
+      const result = await client.createFile(args.project_id, args.file_path, rest);
+      return { content: [{ type: "text" as const, text: `File ${result.file_path} created on branch ${result.branch}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("update_file", {
+    description: "Update an existing file in a repository. Supports optimistic concurrency via last_commit_id. dry_run=true by default.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+      file_path: z.string().describe("File path in repository"),
+      branch: z.string().describe("Branch to commit to"),
+      content: z.string().describe("New file content"),
+      commit_message: z.string().describe("Commit message"),
+      encoding: z.enum(["text", "base64"]).optional().describe("Content encoding. Default: text."),
+      last_commit_id: z.string().optional().describe("Expected last commit ID on the file. If set and stale, GitLab returns 400 to prevent overwriting concurrent changes."),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) return dryRunResponse("Update file", { project_id: args.project_id, file_path: args.file_path, branch: args.branch, commit_message: args.commit_message, content_bytes: args.content.length, last_commit_id: args.last_commit_id });
+      const { dry_run, project_id, file_path, ...rest } = args;
+      void dry_run;
+      void file_path;
+      void project_id;
+      const result = await client.updateFile(args.project_id, args.file_path, rest);
+      return { content: [{ type: "text" as const, text: `File ${result.file_path} updated on branch ${result.branch}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("delete_file", {
+    description: "Delete a file from a repository. dry_run=true by default. This is destructive on the branch.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+      file_path: z.string().describe("File path in repository"),
+      branch: z.string().describe("Branch to commit the deletion to"),
+      commit_message: z.string().describe("Commit message"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) return dryRunResponse("Delete file", { project_id: args.project_id, file_path: args.file_path, branch: args.branch, commit_message: args.commit_message });
+      await client.deleteFile(args.project_id, args.file_path, { branch: args.branch, commit_message: args.commit_message });
+      return { content: [{ type: "text" as const, text: `File ${args.file_path} deleted on branch ${args.branch}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("commit_files", {
+    description: "Atomically commit multiple file actions (create/update/delete/move/chmod) in a single commit. dry_run=true by default.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+      branch: z.string().describe("Target branch"),
+      commit_message: z.string().describe("Commit message"),
+      actions: z.array(z.object({
+        action: z.enum(["create", "update", "delete", "move", "chmod"]).describe("Action type"),
+        file_path: z.string().describe("Destination file path"),
+        previous_path: z.string().optional().describe("Source path (required for 'move')"),
+        content: z.string().optional().describe("File content (required for create/update)"),
+        encoding: z.enum(["text", "base64"]).optional().describe("Content encoding. Default: text."),
+      })).describe("Ordered list of actions to apply in this commit"),
+      start_branch: z.string().optional().describe("Create the target branch from this ref if it doesn't already exist."),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        const summary = args.actions.map(a => `  - ${a.action} ${a.file_path}${a.previous_path ? ` (from ${a.previous_path})` : ""}`).join("\n");
+        return dryRunResponse("Atomic commit", { project_id: args.project_id, branch: args.branch, commit_message: args.commit_message, actions_count: args.actions.length, actions_preview: `\n${summary}` });
+      }
+      const commit = await client.commitFiles(args.project_id, {
+        branch: args.branch,
+        commit_message: args.commit_message,
+        actions: args.actions,
+        start_branch: args.start_branch,
+      });
+      return { content: [{ type: "text" as const, text: `Commit ${commit.short_id} created on branch ${args.branch}: ${commit.title}\n  ${commit.web_url}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
   server.registerTool("list_commits", {
     description: "List recent commits for a project. Filter by branch or file path.",
     inputSchema: {

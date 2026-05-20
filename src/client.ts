@@ -1258,6 +1258,100 @@ export class GitLabClient {
     return { content: Buffer.from(data.content, "base64").toString("utf-8"), file_name: data.file_name, file_path: data.file_path, size: data.size };
   }
 
+  async createFile(
+    projectId: number,
+    filePath: string,
+    data: { branch: string; content: string; commit_message: string; encoding?: "text" | "base64" },
+  ): Promise<{ file_path: string; branch: string }> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/repository/files/${encodeURIComponent(filePath)}`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify({ branch: data.branch, content: data.content, commit_message: data.commit_message, encoding: data.encoding ?? "text" }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as { file_path: string; branch: string };
+  }
+
+  async updateFile(
+    projectId: number,
+    filePath: string,
+    data: { branch: string; content: string; commit_message: string; last_commit_id?: string; encoding?: "text" | "base64" },
+  ): Promise<{ file_path: string; branch: string }> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/repository/files/${encodeURIComponent(filePath)}`, this.baseUrl);
+    const body: Record<string, unknown> = {
+      branch: data.branch, content: data.content, commit_message: data.commit_message, encoding: data.encoding ?? "text",
+    };
+    if (data.last_commit_id) body["last_commit_id"] = data.last_commit_id;
+    const response = await fetch(url.toString(), {
+      method: "PUT",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as { file_path: string; branch: string };
+  }
+
+  async deleteFile(
+    projectId: number,
+    filePath: string,
+    data: { branch: string; commit_message: string },
+  ): Promise<void> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/repository/files/${encodeURIComponent(filePath)}`, this.baseUrl);
+    url.searchParams.set("branch", data.branch);
+    url.searchParams.set("commit_message", data.commit_message);
+    const response = await fetch(url.toString(), {
+      method: "DELETE",
+      headers: { "PRIVATE-TOKEN": this.token },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok && response.status !== 204) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+  }
+
+  async commitFiles(
+    projectId: number,
+    data: {
+      branch: string;
+      commit_message: string;
+      actions: { action: "create" | "update" | "delete" | "move" | "chmod"; file_path: string; previous_path?: string; content?: string; encoding?: "text" | "base64" }[];
+      start_branch?: string;
+    },
+  ): Promise<{ id: string; short_id: string; title: string; web_url: string }> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/repository/commits`, this.baseUrl);
+    const body: Record<string, unknown> = {
+      branch: data.branch,
+      commit_message: data.commit_message,
+      actions: data.actions,
+    };
+    if (data.start_branch) body["start_branch"] = data.start_branch;
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as { id: string; short_id: string; title: string; web_url: string };
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async listCommits(projectId: number, params?: { ref?: string; path?: string }): Promise<any[]> {
     const url = new URL(`/api/v4/projects/${projectId}/repository/commits`, this.baseUrl);
