@@ -1,15 +1,20 @@
 # @wanadev/mcp-gitlab
 
-A Model Context Protocol (MCP) server that gives project managers **and developers** full control over GitLab **epics**, **issues**, **milestones**, **iterations**, **merge requests**, **pipelines**, **branches**, **labels**, and **boards** from Claude Desktop, Claude Code, or any MCP-compatible client.
+A Model Context Protocol (MCP) server that gives project managers **and developers** full control over GitLab **epics**, **issues**, **milestones**, **iterations**, **merge requests**, **code review**, **pipelines**, **branches**, **repository content**, **labels**, **boards**, **members**, and **governance** from Claude Desktop, Claude Code, or any MCP-compatible client.
 
 ## Why this MCP server?
 
 Existing tools like **glab** are developer-oriented and CLI-only. `@wanadev/mcp-gitlab` covers both lenses -- planning *and* code -- through a conversational interface:
 
-- **Epics, milestones & iterations** -- create, update, close, reopen, and link issues to epics. Track sprints with iterations (CRUD). Set health status (on track / needs attention / at risk) and view progress via Work Items API.
-- **Full MR lifecycle** -- create, update, merge, approve, diff, and comment on merge requests.
+- **Epics, milestones & iterations** -- create, update, close, reopen, and link issues to epics. Track sprints with iterations (CRUD). Set health status (on track / needs attention / at risk) and view progress via Work Items API. Attach issues under epics via the modern hierarchy widget.
+- **Full MR lifecycle** -- create, update, merge, rebase, approve, diff, and comment on merge requests.
+- **Code review** -- create line-positioned discussions on MR diffs and resolve them.
 - **CI/CD** -- list and inspect pipelines, fetch job logs, retry or cancel runs.
-- **Branches & repository** -- list/create branches, browse the tree, read files, list commits.
+- **Repository content** -- list/create branches, browse the tree, read files, list commits, *and* write files (create / update / delete / atomic multi-file commits).
+- **Search** -- full-text search across issues, MRs, and code blobs at project or group scope.
+- **Members management** -- add, update, and remove group/project members with access levels.
+- **Governance** -- list and manage protected branches and MR approval rules.
+- **Uploads** -- upload images/binaries to embed in issues, MRs, and epics.
 - **Labels & users** -- CRUD on labels, search users to assign work.
 - **Cross-group visibility** -- query multiple GitLab groups in the same conversation (no hardcoded group ID).
 - **Time tracking** -- see estimated vs. spent time on issues at a glance.
@@ -89,7 +94,7 @@ All write tools (`create_*`, `update_*`, `close_*`, `set_*`, `add_*`) include a 
 
 This prevents accidental changes: the LLM always shows what it intends to do first and only proceeds after your approval.
 
-## All 69 tools
+## All 95 tools
 
 ### Epics (12 tools -- requires GitLab Premium/Ultimate)
 
@@ -108,7 +113,7 @@ This prevents accidental changes: the LLM always shows what it intends to do fir
 | `update_epic_note` | Edit an existing epic comment | group | dry_run |
 | `delete_epic_note` | Delete an epic comment | group | dry_run |
 
-### Work Items (6 tools -- requires GitLab Premium/Ultimate)
+### Work Items (9 tools -- requires GitLab Premium/Ultimate)
 
 | Tool | Description | Scope | Write |
 |------|-------------|:-----:|:-----:|
@@ -118,13 +123,16 @@ This prevents accidental changes: the LLM always shows what it intends to do fir
 | `set_issue_health_status` | Set health status on an issue (onTrack / needsAttention / atRisk) | project | dry_run |
 | `set_epic_iteration` | Associate an iteration (sprint) with an epic | group | dry_run |
 | `add_linked_item` | Link work items (RELATED / BLOCKS / BLOCKED_BY) | group/project | dry_run |
+| `get_work_item_id` | Resolve the WorkItem global ID for an epic or issue (required by link/unlink) | group/project | -- |
+| `link_work_items` | Attach children (issues/epics) under a parent epic via hierarchy widget | group/project | dry_run |
+| `unlink_work_items` | Detach children from their current parent | group/project | dry_run |
 
 ### Issues (11 tools)
 
 | Tool | Description | Scope | Write |
 |------|-------------|:-----:|:-----:|
-| `list_issues` | List issues for a group | group | -- |
-| `list_project_issues` | List issues for a single project | project | -- |
+| `list_issues` | List issues for a group (filter by state, labels, milestone, assignee, iteration) | group | -- |
+| `list_project_issues` | List issues for a single project (with iteration filter) | project | -- |
 | `get_issue` | Get issue details (with time tracking) | project | -- |
 | `create_issue` | Create an issue | project | dry_run |
 | `update_issue` | Update an issue | project | dry_run |
@@ -145,7 +153,7 @@ This prevents accidental changes: the LLM always shows what it intends to do fir
 | `update_milestone` | Update a milestone | group | dry_run |
 | `close_milestone` | Close a milestone | group | dry_run |
 
-### Merge Requests (11 tools)
+### Merge Requests (18 tools)
 
 | Tool | Description | Scope | Write |
 |------|-------------|:-----:|:-----:|
@@ -155,11 +163,18 @@ This prevents accidental changes: the LLM always shows what it intends to do fir
 | `update_merge_request` | Update an MR (title, description, labels, assignees, reviewers) | project | dry_run |
 | `merge_merge_request` | Merge an MR (optionally squash or delete source branch) | project | dry_run |
 | `approve_merge_request` | Approve an MR | project | dry_run |
-| `get_mr_diff` | Get the diff/changes for an MR | project | -- |
+| `rebase_merge_request` | Asynchronously rebase the MR's source branch on top of target | project | dry_run |
+| `get_mr_diff` | Get the diff/changes for an MR (also returns diff_refs for line-positioned comments) | project | -- |
 | `list_mr_notes` | List comments on an MR | project | -- |
 | `add_mr_note` | Add a comment to an MR | project | dry_run |
 | `update_mr_note` | Edit an existing MR comment | project | dry_run |
 | `delete_mr_note` | Delete an MR comment | project | dry_run |
+| `create_mr_discussion` | Code-review comment on a specific diff line (requires diff_refs from get_mr_diff) | project | dry_run |
+| `resolve_mr_discussion` | Mark an MR discussion as resolved or unresolved | project | dry_run |
+| `list_mr_approval_rules` | List project-level MR approval rules | project | -- |
+| `create_mr_approval_rule` | Create a project-level approval rule (eligible users/groups, branches) | project | dry_run |
+| `update_mr_approval_rule` | Update an existing approval rule | project | dry_run |
+| `delete_mr_approval_rule` | Delete an approval rule | project | dry_run |
 
 ### CI/CD (5 tools)
 
@@ -171,7 +186,7 @@ This prevents accidental changes: the LLM always shows what it intends to do fir
 | `retry_pipeline` | Retry a failed pipeline | project | dry_run |
 | `cancel_pipeline` | Cancel a running pipeline | project | dry_run |
 
-### Branches & Repository (5 tools)
+### Branches & Repository (12 tools)
 
 | Tool | Description | Scope | Write |
 |------|-------------|:-----:|:-----:|
@@ -180,6 +195,13 @@ This prevents accidental changes: the LLM always shows what it intends to do fir
 | `list_repository_tree` | List the files/folders in a repo path | project | -- |
 | `get_file` | Read a file's contents at a given ref | project | -- |
 | `list_commits` | List commits (filter by ref, author, date) | project | -- |
+| `create_file` | Create a new file via the API (commit included) | project | dry_run |
+| `update_file` | Update a file (optimistic concurrency via last_commit_id) | project | dry_run |
+| `delete_file` | Delete a file in a single commit | project | dry_run |
+| `commit_files` | Atomic multi-file commit (create/update/delete/move/chmod) | project | dry_run |
+| `list_protected_branches` | List protected branches with their access levels | project | -- |
+| `protect_branch` | Protect a branch with push/merge/unprotect access levels | project | dry_run |
+| `unprotect_branch` | Remove branch protection | project | dry_run |
 
 ### Iterations (3 tools -- requires GitLab Premium/Ultimate)
 
@@ -189,23 +211,32 @@ This prevents accidental changes: the LLM always shows what it intends to do fir
 | `create_iteration` | Create an iteration | group | dry_run |
 | `update_iteration` | Update an iteration (title, dates, state) | group | dry_run |
 
-### Utilities (11 tools)
+### Utilities (20 tools)
 
 | Tool | Description | Scope | Write |
 |------|-------------|:-----:|:-----:|
 | `list_groups` | Discover accessible groups | -- | -- |
 | `list_projects` | List projects in a group | group | -- |
 | `list_group_members` | List members of a group | group | -- |
+| `add_group_member` | Add a user to a group with an access level | group | dry_run |
+| `add_project_member` | Add a user to a project with an access level | project | dry_run |
+| `update_member_access_level` | Change a member's access level (group or project) | group/project | dry_run |
+| `remove_member` | Remove a user from a group or project | group/project | dry_run |
 | `list_labels` | List labels for a group | group | -- |
 | `create_label` | Create a label | group | dry_run |
 | `update_label` | Update a label (name, color, description) | group | dry_run |
 | `delete_label` | Delete a label | group | dry_run |
 | `list_boards` | List issue boards for a group | group | -- |
 | `list_workitem_statuses` | List available work item statuses (for health filtering) | group | -- |
+| `get_work_item_type_id` | Resolve the global ID of a Work Item type (EPIC, ISSUE, TASK, …) for a namespace | group/project | -- |
+| `upload_file` | Upload a file to a project and return the Markdown snippet to embed | project | dry_run |
+| `search_issues` | Full-text search issues at project or group scope | group/project | -- |
+| `search_merge_requests` | Full-text search MRs at project or group scope | group/project | -- |
+| `search_blobs` | Full-text search code/file content at project or group scope | group/project | -- |
 | `search_users` | Search GitLab users by name or username | -- | -- |
 | `get_current_user` | Check connection (current user info) | -- | -- |
 
-> A `gitlab_setup` helper tool is also registered automatically when `GITLAB_TOKEN` is missing or `GITLAB_BASE_URL` is invalid — it guides the user through configuration and is not counted in the 69 above.
+> A `gitlab_setup` helper tool is also registered automatically when `GITLAB_TOKEN` is missing or `GITLAB_BASE_URL` is invalid — it guides the user through configuration and is not counted in the 95 above.
 
 ## Example prompts
 
@@ -231,6 +262,15 @@ This prevents accidental changes: the LLM always shows what it intends to do fir
 - *"Create a `release/2026.05` branch from `main` in project 789"*
 - *"Read the contents of `package.json` on branch `main` in project 789"*
 - *"Find a user named 'Jean Dupont' and assign them issue #15"*
+- *"Rebase MR !42 on top of main"*
+- *"Comment on line 73 of `src/auth.ts` in MR !42 — this should be wrapped in a try/catch"*
+- *"Search the wanadev group for issues mentioning 'CVE-2024'"*
+- *"Show me where `processPayment` is used across project 789"*
+- *"Add @alice as Developer (level 30) to the kp1/api project"*
+- *"Protect `main` on project 789 — only maintainers can merge, no direct pushes"*
+- *"Set up a 2-approval rule named 'security' on project 789, applies to all protected branches"*
+- *"Attach issues #12, #14, and #18 as children of epic #5 in the wanadev group"*
+- *"Upload `screenshot.png` to project 789 and embed it in issue #15"*
 
 ## Use cases for project managers
 
