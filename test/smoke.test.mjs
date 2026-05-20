@@ -40,6 +40,7 @@ const EXPECTED_TOOLS = [
   "list_issue_notes", "add_issue_note", "update_issue_note", "delete_issue_note",
   // Milestones
   "list_milestones", "get_milestone", "create_milestone", "update_milestone", "close_milestone",
+  "list_project_milestones", "get_project_milestone", "create_project_milestone", "update_project_milestone", "close_project_milestone",
   // Merge Requests
   "list_merge_requests", "get_merge_request",
   "create_merge_request", "update_merge_request", "merge_merge_request", "approve_merge_request",
@@ -73,6 +74,7 @@ const WRITE_TOOLS = [
   "create_issue", "update_issue", "close_issue", "reopen_issue",
   "add_issue_note", "update_issue_note", "delete_issue_note",
   "create_milestone", "update_milestone", "close_milestone",
+  "create_project_milestone", "update_project_milestone", "close_project_milestone",
   "create_iteration", "update_iteration",
   "create_merge_request", "update_merge_request", "merge_merge_request", "approve_merge_request",
   "rebase_merge_request",

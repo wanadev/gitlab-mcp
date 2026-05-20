@@ -445,11 +445,28 @@ export class GitLabClient {
   }
 
   async setIssueAssignees(projectId: number, issueIid: number, assigneeIds: number[]): Promise<void> {
-    const issueGid = await this.resolveIssueWorkItemGid(projectId, issueIid);
-    await this.mutate(M_WORK_ITEM_UPDATE, {
-      id: issueGid,
-      assigneesWidget: { assigneeIds: assigneeIds.map(id => toGid("User", id)) },
-    }, "workItemUpdate");
+    // Issue #70: workItemUpdate(assigneesWidget) requires the Work Items API,
+    // which doesn't exist on older CE instances — every assignment fails with
+    // a GraphQL schema error. REST PUT works on every GitLab edition since 13.x
+    // and handles the no-op case (UpdateIssueInput.assigneeIds) correctly here
+    // because we're hitting the legacy REST endpoint, not the GraphQL one.
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/issues/${issueIid}`, this.baseUrl);
+    // assignee_ids[] is the multi-assignee form; passing an empty array
+    // unassigns everyone. GitLab accepts both [] and `[0]` for clearing.
+    const body = assigneeIds.length === 0
+      ? { assignee_ids: [0] }
+      : { assignee_ids: assigneeIds };
+    const response = await fetch(url.toString(), {
+      method: "PUT",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1078,6 +1095,82 @@ export class GitLabClient {
 
   async closeMilestone(groupId: string, milestoneId: number): Promise<GitLabMilestone> {
     return this.updateMilestone(groupId, milestoneId, { state_event: "close" });
+  }
+
+  // Project-level milestones (issue #69). On GitLab CE, milestones live on
+  // projects, not groups — so the group-scoped tools are unusable. REST
+  // throughout for the same reason the group milestone tools went REST: the
+  // GraphQL milestone mutations have known bugs on GitLab 18.x.
+
+  async listProjectMilestones(projectId: number, params?: {
+    state?: string;
+    search?: string;
+  }): Promise<GitLabMilestone[]> {
+    const url = new URL(`/api/v4/projects/${projectId}/milestones`, this.baseUrl);
+    if (params?.state) url.searchParams.set("state", params.state);
+    if (params?.search) url.searchParams.set("search", params.search);
+    url.searchParams.set("per_page", "100");
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error(`GitLab ${response.status}: project milestones list failed`);
+    return (await response.json()) as GitLabMilestone[];
+  }
+
+  async getProjectMilestone(projectId: number, milestoneId: number): Promise<GitLabMilestone> {
+    const url = new URL(`/api/v4/projects/${projectId}/milestones/${milestoneId}`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error(`Milestone ${milestoneId} not found in project ${projectId}`);
+    return (await response.json()) as GitLabMilestone;
+  }
+
+  async createProjectMilestone(
+    projectId: number,
+    data: { title: string; description?: string; start_date?: string; due_date?: string },
+  ): Promise<GitLabMilestone> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/milestones`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as GitLabMilestone;
+  }
+
+  async updateProjectMilestone(
+    projectId: number,
+    milestoneId: number,
+    data: { title?: string; description?: string; start_date?: string; due_date?: string; state_event?: string },
+  ): Promise<GitLabMilestone> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`/api/v4/projects/${projectId}/milestones/${milestoneId}`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "PUT",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as GitLabMilestone;
+  }
+
+  async closeProjectMilestone(projectId: number, milestoneId: number): Promise<GitLabMilestone> {
+    return this.updateProjectMilestone(projectId, milestoneId, { state_event: "close" });
   }
 
   // ---------------------------------------------------------------------------

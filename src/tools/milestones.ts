@@ -167,4 +167,104 @@ export function registerMilestoneTools(server: McpServer, client: GitLabClient):
       };
     }
   });
+
+  // Project-level milestones (issue #69). Required for GitLab CE/Free where
+  // milestones don't exist at the group level.
+
+  server.registerTool("list_project_milestones", {
+    description: "List milestones at the project level. On GitLab CE/Free, milestones are project-scoped and this is the only way to list them.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+      state: z.enum(["active", "closed"]).optional().describe("Filter by state"),
+      search: z.string().optional().describe("Search by title"),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const milestones = await client.listProjectMilestones(args.project_id, { state: args.state, search: args.search });
+      return { content: [{ type: "text" as const, text: formatMilestones(milestones) }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("get_project_milestone", {
+    description: "Get details of a project-level milestone.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+      milestone_id: idNumber().describe("Milestone ID"),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const milestone = await client.getProjectMilestone(args.project_id, args.milestone_id);
+      return { content: [{ type: "text" as const, text: formatMilestoneDetail(milestone) }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("create_project_milestone", {
+    description: "Create a milestone on a project. dry_run=true by default.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+      title: z.string().describe("Milestone title"),
+      description: z.string().optional().describe("Description (Markdown)"),
+      start_date: z.string().optional().describe("Start date (YYYY-MM-DD)"),
+      due_date: z.string().optional().describe("Due date (YYYY-MM-DD)"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      const { project_id, dry_run, ...data } = args;
+      if (dry_run) return dryRunResponse("Create project milestone", { project_id, ...data });
+      const milestone = await client.createProjectMilestone(project_id, data);
+      return { content: [{ type: "text" as const, text: `Milestone created!\n\n${formatMilestoneDetail(milestone)}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("update_project_milestone", {
+    description: "Update a project-level milestone. dry_run=true by default.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+      milestone_id: idNumber().describe("Milestone ID"),
+      title: z.string().optional().describe("New title"),
+      description: z.string().optional().describe("New description (Markdown)"),
+      start_date: z.string().optional().describe("New start date (YYYY-MM-DD)"),
+      due_date: z.string().optional().describe("New due date (YYYY-MM-DD)"),
+      state_event: z.enum(["close", "activate"]).optional().describe("Lifecycle transition"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      const { project_id, milestone_id, dry_run, ...data } = args;
+      if (dry_run) return dryRunResponse("Update project milestone", { project_id, milestone_id, ...data });
+      const milestone = await client.updateProjectMilestone(project_id, milestone_id, data);
+      return { content: [{ type: "text" as const, text: `Milestone updated.\n\n${formatMilestoneDetail(milestone)}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("close_project_milestone", {
+    description: "Close a project-level milestone. dry_run=true by default.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+      milestone_id: idNumber().describe("Milestone ID to close"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) return dryRunResponse("Close project milestone", { project_id: args.project_id, milestone_id: args.milestone_id });
+      const milestone = await client.closeProjectMilestone(args.project_id, args.milestone_id);
+      return { content: [{ type: "text" as const, text: `Milestone closed.\n\n${formatMilestoneDetail(milestone)}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
 }
