@@ -322,6 +322,105 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
     }
   });
 
+  // MR approval rules (issue #55).
+  server.registerTool("list_mr_approval_rules", {
+    description: "List the project-level MR approval rules: who must approve, how many approvals are required, applies-to-which-branches.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const rules = await client.listMRApprovalRules(args.project_id);
+      if (rules.length === 0) return { content: [{ type: "text" as const, text: "No approval rules configured." }] };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const text = (rules as any[]).map(r => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const users = (r.eligible_approvers ?? []).map((u: any) => `@${u.username}`).join(", ");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const groups = (r.groups ?? []).map((g: any) => g.full_path).join(", ");
+        return `**${r.name}** (id:${r.id}) — ${r.approvals_required} approval(s)${r.rule_type ? `, type=${r.rule_type}` : ""}\n  eligible: ${users || "(none)"}${groups ? ` | groups: ${groups}` : ""}`;
+      }).join("\n\n");
+      return { content: [{ type: "text" as const, text: `${rules.length} approval rule(s):\n\n${text}` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("create_mr_approval_rule", {
+    description: "Create a project-level MR approval rule. dry_run=true by default.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+      name: z.string().describe("Rule name"),
+      approvals_required: idNumber().describe("Number of approvals required"),
+      rule_type: z.enum(["regular", "any_approver", "code_owner"]).optional().describe("Rule type. Default: regular."),
+      user_ids: z.array(idNumber()).optional().describe("User IDs who can approve"),
+      group_ids: z.array(idNumber()).optional().describe("Group IDs whose members can approve"),
+      protected_branch_ids: z.array(idNumber()).optional().describe("Protected branch IDs this rule applies to (default: all)"),
+      applies_to_all_protected_branches: z.boolean().optional().describe("Apply to every protected branch"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) return dryRunResponse("Create MR approval rule", { project_id: args.project_id, name: args.name, approvals_required: args.approvals_required, rule_type: args.rule_type });
+      const { project_id, dry_run, ...data } = args;
+      void dry_run;
+      void project_id;
+      const rule = await client.createMRApprovalRule(args.project_id, data);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return { content: [{ type: "text" as const, text: `Approval rule "${args.name}" created (id: ${(rule as any).id}, required: ${args.approvals_required}).` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("update_mr_approval_rule", {
+    description: "Update an existing project-level MR approval rule. dry_run=true by default.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+      rule_id: idNumber().describe("Approval rule ID (from list_mr_approval_rules)"),
+      name: z.string().optional().describe("New rule name"),
+      approvals_required: idNumber().optional().describe("New approval count"),
+      user_ids: z.array(idNumber()).optional().describe("Replace eligible user IDs"),
+      group_ids: z.array(idNumber()).optional().describe("Replace eligible group IDs"),
+      protected_branch_ids: z.array(idNumber()).optional().describe("Replace protected branch IDs"),
+      applies_to_all_protected_branches: z.boolean().optional().describe("Apply to every protected branch"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) return dryRunResponse("Update MR approval rule", { project_id: args.project_id, rule_id: args.rule_id, name: args.name, approvals_required: args.approvals_required });
+      const { project_id, rule_id, dry_run, ...data } = args;
+      void dry_run;
+      void project_id;
+      void rule_id;
+      await client.updateMRApprovalRule(args.project_id, args.rule_id, data);
+      return { content: [{ type: "text" as const, text: `Approval rule ${args.rule_id} updated.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("delete_mr_approval_rule", {
+    description: "Delete a project-level MR approval rule. dry_run=true by default. This is destructive.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+      rule_id: idNumber().describe("Approval rule ID to delete"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) return dryRunResponse("Delete MR approval rule", { project_id: args.project_id, rule_id: args.rule_id });
+      await client.deleteMRApprovalRule(args.project_id, args.rule_id);
+      return { content: [{ type: "text" as const, text: `Approval rule ${args.rule_id} deleted.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
   server.registerTool("create_mr_discussion", {
     description: "Create a code-review comment on a specific line in an MR's diff (a 'discussion' in GitLab terminology). Requires the diff_refs (base_sha, head_sha, start_sha) returned by get_mr_diff. Provide exactly one of new_line / old_line. dry_run=true by default.",
     inputSchema: {

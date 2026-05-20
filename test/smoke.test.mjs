@@ -46,11 +46,13 @@ const EXPECTED_TOOLS = [
   "rebase_merge_request",
   "list_mr_notes", "add_mr_note", "update_mr_note", "delete_mr_note", "get_mr_diff",
   "create_mr_discussion", "resolve_mr_discussion",
+  "list_mr_approval_rules", "create_mr_approval_rule", "update_mr_approval_rule", "delete_mr_approval_rule",
   // CI/CD
   "list_pipelines", "get_pipeline", "get_job_log", "retry_pipeline", "cancel_pipeline",
   // Branches & Repository
   "list_branches", "create_branch", "list_repository_tree", "get_file", "list_commits",
   "create_file", "update_file", "delete_file", "commit_files",
+  "list_protected_branches", "protect_branch", "unprotect_branch",
   // Utils
   "list_groups", "list_projects", "list_group_members",
   "list_labels", "create_label", "update_label", "delete_label",
@@ -75,6 +77,8 @@ const WRITE_TOOLS = [
   "create_merge_request", "update_merge_request", "merge_merge_request", "approve_merge_request",
   "rebase_merge_request",
   "create_mr_discussion", "resolve_mr_discussion",
+  "create_mr_approval_rule", "update_mr_approval_rule", "delete_mr_approval_rule",
+  "protect_branch", "unprotect_branch",
   "add_mr_note", "update_mr_note", "delete_mr_note",
   "retry_pipeline", "cancel_pipeline",
   "create_branch",
