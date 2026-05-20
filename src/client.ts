@@ -1538,6 +1538,77 @@ export class GitLabClient {
     };
   }
 
+  // Members management (issue #54). Same REST shape for groups and projects,
+  // distinguished by the base path.
+  private membersBasePath(target: { type: "group"; id: string } | { type: "project"; id: number }): string {
+    return target.type === "group"
+      ? `/api/v4/groups/${encodeURIComponent(target.id)}/members`
+      : `/api/v4/projects/${target.id}/members`;
+  }
+
+  async addMember(
+    target: { type: "group"; id: string } | { type: "project"; id: number },
+    userId: number,
+    accessLevel: number,
+    expiresAt?: string,
+  ): Promise<GitLabMember> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(this.membersBasePath(target), this.baseUrl);
+    const body: Record<string, unknown> = { user_id: userId, access_level: accessLevel };
+    if (expiresAt) body["expires_at"] = expiresAt;
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as GitLabMember;
+  }
+
+  async updateMemberAccessLevel(
+    target: { type: "group"; id: string } | { type: "project"; id: number },
+    userId: number,
+    accessLevel: number,
+    expiresAt?: string,
+  ): Promise<GitLabMember> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`${this.membersBasePath(target)}/${userId}`, this.baseUrl);
+    const body: Record<string, unknown> = { access_level: accessLevel };
+    if (expiresAt) body["expires_at"] = expiresAt;
+    const response = await fetch(url.toString(), {
+      method: "PUT",
+      headers: { "PRIVATE-TOKEN": this.token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return (await response.json()) as GitLabMember;
+  }
+
+  async removeMember(
+    target: { type: "group"; id: string } | { type: "project"; id: number },
+    userId: number,
+  ): Promise<void> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    const url = new URL(`${this.membersBasePath(target)}/${userId}`, this.baseUrl);
+    const response = await fetch(url.toString(), {
+      method: "DELETE",
+      headers: { "PRIVATE-TOKEN": this.token },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok && response.status !== 204) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+  }
+
   // Global search (issue #52). REST /projects/:id/search and /groups/:id/search
   // with `scope=` parameter. Single helper, three exposed tools (one per scope).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
