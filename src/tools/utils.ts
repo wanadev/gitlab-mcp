@@ -6,6 +6,11 @@ import { idNumber, flagBool, dryRunSchema, detectEscapeIssues, formatWarnings, a
 
 const groupIdSchema = z.string().describe("ID ou chemin URL du groupe GitLab (ex: '42' ou 'wanadev/kp1'). Si vous n'avez que le nom, appelez d'abord list_groups pour trouver le chemin exact.");
 
+function dryRunResponse(action: string, details: Record<string, unknown>): { content: { type: "text"; text: string }[] } {
+  const lines = Object.entries(details).filter(([, v]) => v !== undefined).map(([k, v]) => `  - **${k}:** ${v}`);
+  return { content: [{ type: "text" as const, text: `[DRY RUN] ${action}\n\n${lines.join("\n")}\n\nThis is a preview. Ask the user to confirm in their language before re-calling with dry_run=false.` }] };
+}
+
 function formatProject(p: GitLabProject): string {
   const archived = p.archived ? " [ARCHIVE]" : "";
   return `**${p.name_with_namespace}** (id:${p.id})${archived}\n  ${p.web_url}`;
@@ -371,6 +376,36 @@ export function registerUtilTools(server: McpServer, client: GitLabClient): void
       }
       await client.deleteLabel(args.group_id, args.label_id);
       return { content: [{ type: "text" as const, text: `Label ${args.label_id} deleted.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("upload_file", {
+    description: "Upload a file to a project so it can be embedded in an issue, MR, or epic description. Returns the Markdown snippet GitLab expects (e.g. ![alt](/uploads/...)). Provide exactly one of file_path (read from local disk) or file_base64 (inline data). dry_run=true by default.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID to upload to"),
+      filename: z.string().describe("Filename to register on GitLab (extension matters for image detection)"),
+      file_path: z.string().optional().describe("Absolute path to a local file to upload"),
+      file_base64: z.string().optional().describe("Base64-encoded file content (alternative to file_path)"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (!args.file_path && !args.file_base64) {
+        return { content: [{ type: "text" as const, text: "Erreur: provide exactly one of file_path or file_base64." }], isError: true };
+      }
+      if (args.file_path && args.file_base64) {
+        return { content: [{ type: "text" as const, text: "Erreur: file_path and file_base64 are mutually exclusive." }], isError: true };
+      }
+      if (args.dry_run) {
+        const sourceDescription = args.file_path ? `file_path=${args.file_path}` : `file_base64=<${args.file_base64!.length} chars>`;
+        return dryRunResponse("Upload file", { project_id: args.project_id, filename: args.filename, source: sourceDescription });
+      }
+      const source = args.file_path ? { file_path: args.file_path } : { base64: args.file_base64! };
+      const result = await client.uploadFile(args.project_id, source, args.filename);
+      return { content: [{ type: "text" as const, text: `File uploaded.\n\n- **Markdown:** \`${result.markdown}\`\n- **URL:** ${result.url}\n- **Alt:** ${result.alt}` }] };
     } catch (error) {
       return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
     }
