@@ -201,6 +201,25 @@ export function registerMergeRequestTools(server: McpServer, client: GitLabClien
     }
   });
 
+  server.registerTool("rebase_merge_request", {
+    description: "Trigger an asynchronous rebase of the MR's source branch on top of the target branch. Useful when CI requires a linear history before merge. dry_run=true by default.",
+    inputSchema: {
+      project_id: idNumber().describe("Project ID"),
+      mr_iid: idNumber().describe("MR IID to rebase"),
+      skip_ci: z.boolean().optional().describe("If true, set ci.skip on the rebase commit (Premium feature, see GitLab docs)."),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) return dryRunResponse("Rebase MR", { project_id: args.project_id, mr_iid: args.mr_iid, skip_ci: args.skip_ci });
+      const result = await client.rebaseMergeRequest(args.project_id, args.mr_iid, args.skip_ci);
+      return { content: [{ type: "text" as const, text: `Rebase enqueued for MR !${args.mr_iid} (rebase_in_progress=${result.rebase_in_progress}). The rebase runs asynchronously — poll get_merge_request to track progress.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
   server.registerTool("list_mr_notes", {
     description: "List comments on a merge request.",
     inputSchema: {
