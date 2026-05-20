@@ -94,7 +94,7 @@ All write tools (`create_*`, `update_*`, `close_*`, `set_*`, `add_*`) include a 
 
 This prevents accidental changes: the LLM always shows what it intends to do first and only proceeds after your approval.
 
-## All 95 tools
+## All 100 tools
 
 ### Epics (12 tools -- requires GitLab Premium/Ultimate)
 
@@ -143,15 +143,20 @@ This prevents accidental changes: the LLM always shows what it intends to do fir
 | `update_issue_note` | Edit an existing issue comment | project | dry_run |
 | `delete_issue_note` | Delete an issue comment | project | dry_run |
 
-### Milestones (5 tools)
+### Milestones (10 tools)
 
 | Tool | Description | Scope | Write |
 |------|-------------|:-----:|:-----:|
 | `list_milestones` | List milestones for a group | group | -- |
-| `get_milestone` | Get milestone details | group | -- |
-| `create_milestone` | Create a milestone | group | dry_run |
-| `update_milestone` | Update a milestone | group | dry_run |
-| `close_milestone` | Close a milestone | group | dry_run |
+| `get_milestone` | Get milestone details (group) | group | -- |
+| `create_milestone` | Create a group milestone | group | dry_run |
+| `update_milestone` | Update a group milestone | group | dry_run |
+| `close_milestone` | Close a group milestone | group | dry_run |
+| `list_project_milestones` | List milestones at the project level (the only way on GitLab CE/Free) | project | -- |
+| `get_project_milestone` | Get a project milestone | project | -- |
+| `create_project_milestone` | Create a project milestone | project | dry_run |
+| `update_project_milestone` | Update a project milestone | project | dry_run |
+| `close_project_milestone` | Close a project milestone | project | dry_run |
 
 ### Merge Requests (18 tools)
 
@@ -236,7 +241,7 @@ This prevents accidental changes: the LLM always shows what it intends to do fir
 | `search_users` | Search GitLab users by name or username | -- | -- |
 | `get_current_user` | Check connection (current user info) | -- | -- |
 
-> A `gitlab_setup` helper tool is also registered automatically when `GITLAB_TOKEN` is missing or `GITLAB_BASE_URL` is invalid — it guides the user through configuration and is not counted in the 95 above.
+> A `gitlab_setup` helper tool is also registered automatically when `GITLAB_TOKEN` is missing or `GITLAB_BASE_URL` is invalid — it guides the user through configuration and is not counted in the 100 above.
 
 ## Example prompts
 
