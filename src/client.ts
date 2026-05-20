@@ -502,6 +502,38 @@ export class GitLabClient {
     }, "workItemUpdate");
   }
 
+  // Hierarchy widget (issue #48). The Work Items API replaces the legacy
+  // epic-issue association: a child is attached to a parent by setting
+  // `hierarchyWidget.parentId` on the child (or `childrenIds` on the parent).
+  // We use the per-child `parentId` mutation so link/unlink are idempotent
+  // and don't accidentally replace other children. One mutation per child.
+
+  async resolveWorkItemGid(
+    target: { type: "epic"; groupId: string; epicIid: number } | { type: "issue"; projectId: number; issueIid: number },
+  ): Promise<string> {
+    return target.type === "epic"
+      ? this.resolveEpicWorkItemGid(target.groupId, target.epicIid)
+      : this.resolveIssueWorkItemGid(target.projectId, target.issueIid);
+  }
+
+  async linkWorkItemsHierarchy(parentGid: string, childGids: string[]): Promise<void> {
+    for (const childGid of childGids) {
+      await this.mutate(M_WORK_ITEM_UPDATE, {
+        id: childGid,
+        hierarchyWidget: { parentId: parentGid },
+      }, "workItemUpdate");
+    }
+  }
+
+  async unlinkWorkItemsHierarchy(childGids: string[]): Promise<void> {
+    for (const childGid of childGids) {
+      await this.mutate(M_WORK_ITEM_UPDATE, {
+        id: childGid,
+        hierarchyWidget: { parentId: null },
+      }, "workItemUpdate");
+    }
+  }
+
   async addLinkedItem(
     sourceTarget: { type: "epic"; groupId: string; epicIid: number } | { type: "issue"; projectId: number; issueIid: number },
     linkedGid: string,

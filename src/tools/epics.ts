@@ -491,6 +491,67 @@ export function registerEpicTools(server: McpServer, client: GitLabClient): void
     }
   });
 
+  server.registerTool("get_work_item_id", {
+    description: "Resolve the WorkItem global ID (gid://gitlab/WorkItem/N) for an epic or issue. Required as parent_work_item_id / child_work_item_ids on link_work_items and unlink_work_items.",
+    inputSchema: {
+      item_type: z.enum(["epic", "issue"]).describe("Work item type"),
+      group_id: z.string().optional().describe("Group ID (required if item_type is epic)"),
+      project_id: idNumber().optional().describe("Project ID (required if item_type is issue)"),
+      iid: idNumber().describe("IID of the epic or issue"),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    try {
+      const target = args.item_type === "epic"
+        ? { type: "epic" as const, groupId: args.group_id!, epicIid: args.iid }
+        : { type: "issue" as const, projectId: args.project_id!, issueIid: args.iid };
+      const gid = await client.resolveWorkItemGid(target);
+      return { content: [{ type: "text" as const, text: `${args.item_type} #${args.iid} → WorkItem GID: \`${gid}\`` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("link_work_items", {
+    description: "Attach one or more work items (issues or epics) as children of a parent work item (epic). Uses the Work Items hierarchy widget — the canonical GitLab 17+ replacement for add_issue_to_epic. Idempotent: existing children of the parent are preserved. Resolve GIDs via get_work_item_id. dry_run=true by default.",
+    inputSchema: {
+      parent_work_item_id: z.string().describe("Parent WorkItem GID (resolve via get_work_item_id with item_type=epic)"),
+      child_work_item_ids: z.array(z.string()).describe("WorkItem GIDs of children to attach (Issue or Epic)"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        return dryRunResponse("Link work items to parent", { parent: args.parent_work_item_id, children: args.child_work_item_ids.join(", ") });
+      }
+      await client.linkWorkItemsHierarchy(args.parent_work_item_id, args.child_work_item_ids);
+      return { content: [{ type: "text" as const, text: `Linked ${args.child_work_item_ids.length} work item(s) under ${args.parent_work_item_id}.` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
+  server.registerTool("unlink_work_items", {
+    description: "Detach one or more work items from their current parent. Per-child operation: each child is unset from whatever parent it currently has (parent_work_item_id is accepted for symmetry but the unlink does not assert it). dry_run=true by default.",
+    inputSchema: {
+      parent_work_item_id: z.string().optional().describe("Parent WorkItem GID (informational, not asserted)"),
+      child_work_item_ids: z.array(z.string()).describe("WorkItem GIDs of children to detach"),
+      dry_run: dryRunSchema,
+    },
+    annotations: { readOnlyHint: false },
+  }, async (args) => {
+    try {
+      if (args.dry_run) {
+        return dryRunResponse("Unlink work items from parent", { parent: args.parent_work_item_id ?? "(any)", children: args.child_work_item_ids.join(", ") });
+      }
+      await client.unlinkWorkItemsHierarchy(args.child_work_item_ids);
+      return { content: [{ type: "text" as const, text: `Unlinked ${args.child_work_item_ids.length} work item(s).` }] };
+    } catch (error) {
+      return { content: [{ type: "text" as const, text: `Erreur: ${(error as Error).message}` }], isError: true };
+    }
+  });
+
   server.registerTool("add_linked_item", {
     description: "Create a link between two work items (epics or issues). Link types: RELATED, BLOCKS, BLOCKED_BY. dry_run=true by default.",
     inputSchema: {
