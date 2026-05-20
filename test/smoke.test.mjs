@@ -50,6 +50,7 @@ const EXPECTED_TOOLS = [
   "list_pipelines", "get_pipeline", "get_job_log", "retry_pipeline", "cancel_pipeline",
   // Branches & Repository
   "list_branches", "create_branch", "list_repository_tree", "get_file", "list_commits",
+  "create_file", "update_file", "delete_file", "commit_files",
   // Utils
   "list_groups", "list_projects", "list_group_members",
   "list_labels", "create_label", "update_label", "delete_label",
@@ -76,6 +77,7 @@ const WRITE_TOOLS = [
   "add_mr_note", "update_mr_note", "delete_mr_note",
   "retry_pipeline", "cancel_pipeline",
   "create_branch",
+  "create_file", "update_file", "delete_file", "commit_files",
   "create_label", "update_label", "delete_label",
   "upload_file",
 ];
