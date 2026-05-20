@@ -53,6 +53,7 @@ const EXPECTED_TOOLS = [
   "list_labels", "create_label", "update_label", "delete_label",
   "list_boards", "list_iterations", "create_iteration", "update_iteration",
   "list_workitem_statuses", "get_work_item_type_id",
+  "upload_file",
   "search_users", "get_current_user",
 ];
 
@@ -71,6 +72,7 @@ const WRITE_TOOLS = [
   "retry_pipeline", "cancel_pipeline",
   "create_branch",
   "create_label", "update_label", "delete_label",
+  "upload_file",
 ];
 
 const GROUP_SCOPED_TOOLS = [

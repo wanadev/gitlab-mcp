@@ -1308,6 +1308,42 @@ export class GitLabClient {
     );
   }
 
+  async uploadFile(
+    projectId: number,
+    source: { file_path: string } | { base64: string },
+    filename: string,
+  ): Promise<{ markdown: string; url: string; alt: string; full_path: string }> {
+    if (this.readOnly) throw new Error("Mode lecture seule actif (GITLAB_READ_ONLY=true).");
+    // Lazy-import fs/promises so the client stays tree-shakeable in non-Node runtimes.
+    let bytes: Uint8Array;
+    if ("file_path" in source) {
+      const { readFile } = await import("node:fs/promises");
+      bytes = new Uint8Array(await readFile(source.file_path));
+    } else {
+      bytes = Uint8Array.from(Buffer.from(source.base64, "base64"));
+    }
+    const url = new URL(`/api/v4/projects/${projectId}/uploads`, this.baseUrl);
+    const form = new FormData();
+    form.append("file", new Blob([bytes]), filename);
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      headers: { "PRIVATE-TOKEN": this.token },
+      body: form,
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`GitLab ${response.status}: ${text.slice(0, 200)}`);
+    }
+    const data = (await response.json()) as { alt: string; url: string; markdown: string; full_path?: string };
+    return {
+      markdown: data.markdown,
+      url: data.url,
+      alt: data.alt,
+      full_path: data.full_path ?? data.url,
+    };
+  }
+
   async searchUsers(query: string): Promise<GitLabUser[]> {
     // REST — no good GraphQL equivalent for global user search
     const url = new URL("/api/v4/users", this.baseUrl);
