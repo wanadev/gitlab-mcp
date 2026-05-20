@@ -515,6 +515,7 @@ export class GitLabClient {
     labels?: string;
     milestone?: string;
     assignee_username?: string;
+    iteration_id?: number;
     order_by?: string;
     sort?: string;
   }): Promise<GitLabIssue[]> {
@@ -527,6 +528,7 @@ export class GitLabClient {
         labelName: params?.labels ? params.labels.split(",").map(s => s.trim()) : null,
         milestoneTitle: params?.milestone ? [params.milestone] : null,
         assigneeUsernames: params?.assignee_username ? [params.assignee_username] : null,
+        iterationId: params?.iteration_id ? [toGid("Iteration", params.iteration_id)] : null,
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (d: any) => d.group?.issues,
@@ -1257,6 +1259,7 @@ export class GitLabClient {
     labels?: string;
     milestone?: string;
     assignee_username?: string;
+    iteration_id?: number;
   }): Promise<GitLabIssue[]> {
     const projectPath = await this.resolveProjectPath(projectId);
     return this.graphqlPaginate(
@@ -1268,6 +1271,7 @@ export class GitLabClient {
         labelName: params?.labels ? params.labels.split(",").map(s => s.trim()) : null,
         milestoneTitle: params?.milestone ? [params.milestone] : null,
         assigneeUsernames: params?.assignee_username ? [params.assignee_username] : null,
+        iterationId: params?.iteration_id ? [toGid("Iteration", params.iteration_id)] : null,
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (d: any) => d.project?.issues,
