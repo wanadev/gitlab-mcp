@@ -1,13 +1,14 @@
 {
-  "SessionStart": [
-    {
-      "matcher": "",
-      "hooks": [
-        {
-          "type": "prompt",
-          "prompt": "Check if the GITLAB_TOKEN environment variable is set. If it is NOT set or empty, proactively tell the user (in their language) that the GitLab MCP plugin needs a Personal Access Token to work. Guide them step by step: 1) Go to GitLab > Settings > Access Tokens, 2) Create a token with the 'api' scope, 3) Set it as GITLAB_TOKEN environment variable. Be friendly and concise. If GITLAB_TOKEN IS set, say nothing — do not mention it at all."
-        }
-      ]
-    }
-  ]
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "test -n \"$GITLAB_TOKEN\" || printf '%s' 'The wanadev-gitlab GitLab MCP plugin has no GITLAB_TOKEN set. Proactively tell the user (in their language): 1) GitLab > Settings > Access Tokens, 2) create a token with the api scope, 3) set it as the GITLAB_TOKEN environment variable. Be friendly and concise.'"
+          }
+        ]
+      }
+    ]
+  }
 }
